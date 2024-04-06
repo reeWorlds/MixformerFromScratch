@@ -400,4 +400,5 @@ FodyWeavers.xsd
 *.bin
 *.lib
 *.dll
-*ckpt
+*.ckpt
+*.egg-info/
