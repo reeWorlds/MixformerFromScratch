@@ -61,7 +61,7 @@ def make_mixformer_config(size_type='medium'):
     config['stage_1'] = make_stage_config(embds[0], embds[1], 24, 24, num_mams[1], 3, 1, 2, 3, 1, 1, 1, 2,
                                           n_heads[1], 3)
     config['classes_head'] = make_classes_head_config(embds[lst_stg], config[f'stage_{lst_stg}']['target_out_h'],
-                                                   config[f'stage_{lst_stg}']['target_out_w'], 64)
+                                                   config[f'stage_{lst_stg}']['target_out_w'], 128)
     config.update({'target_out_h': config[f'stage_{lst_stg}']['target_out_h'],
                    'target_out_w': config[f'stage_{lst_stg}']['target_out_w'],
                    'out_embed_dim': embds[lst_stg]})

@@ -305,10 +305,10 @@ class ClassesHead(nn.Module):
         self.search_w = config['search_w']
         self.linear_size = config['linear_size']
 
-        self.conv1 = nn.Conv2d(self.channels, self.channels, 3, padding=1)
-        self.batchnorm1 = nn.BatchNorm2d(self.channels)
+        self.conv1 = nn.Conv2d(self.channels, self.channels // 2, 3, padding=1)
+        self.batchnorm1 = nn.BatchNorm2d(self.channels // 2)
         self.global_average_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.linear1 = nn.Linear(self.channels, self.linear_size)
+        self.linear1 = nn.Linear(self.channels // 2, self.linear_size)
         self.linear2 = nn.Linear(self.linear_size, 5)
 
     def forward(self, x):
@@ -318,12 +318,12 @@ class ClassesHead(nn.Module):
 
         # (B, C, H, W)
         x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_h, w=self.search_w).contiguous()
-        # (B, C, H, W)
+        # (B, C/2, H, W)
         x = F.relu(self.batchnorm1(self.conv1(x)))
-        # (B, C)
+        # (B, C/2)
         x = self.global_average_pool(x).squeeze(-1).squeeze(-1)
-        # x: (B, C)
-        assert x.shape == (B, self.channels)
+        # x: (B, C/2)
+        assert x.shape == (B, self.channels // 2)
         # (B, LS)
         x = F.relu(self.linear1(x))
         # (B, 5)
