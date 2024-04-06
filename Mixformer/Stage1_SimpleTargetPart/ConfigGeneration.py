@@ -50,9 +50,9 @@ def make_mixformer_config(size_type='medium'):
     if size_type == 'small':
         embds, n_heads, num_mams = [32, 64], [1, 2], [2, 4]
     elif size_type == 'medium':
-        embds, n_heads, num_mams = [64, 96], [2, 3], [3, 6]
+        embds, n_heads, num_mams = [48, 72], [2, 3], [3, 6]
     elif size_type == 'large':
-        embds, n_heads, num_mams = [96, 128], [3, 4], [4, 8]
+        embds, n_heads, num_mams = [64, 96], [3, 4], [4, 8]
     else:
         raise ValueError(f'Invalid size type {size_type}')
     config = {'target_inp_h': 48, 'target_inp_w': 48, 'num_stages': num_stages}
