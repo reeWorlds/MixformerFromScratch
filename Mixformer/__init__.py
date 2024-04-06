@@ -1,1 +1,0 @@
-from . import Stage1_SimpleTargetPart as st1_target
