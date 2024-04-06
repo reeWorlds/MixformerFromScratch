@@ -1,2 +1,7 @@
 from setuptools import setup
-setup()
+
+setup(
+    name='Mixformer',
+    version='0.1.0',
+    packages=['Mixformer'],
+)

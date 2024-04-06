@@ -1,0 +1,8 @@
+LICENSE
+README.md
+setup.py
+Mixformer/__init__.py
+Mixformer.egg-info/PKG-INFO
+Mixformer.egg-info/SOURCES.txt
+Mixformer.egg-info/dependency_links.txt
+Mixformer.egg-info/top_level.txt
