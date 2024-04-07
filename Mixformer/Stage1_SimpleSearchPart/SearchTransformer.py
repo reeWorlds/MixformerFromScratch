@@ -234,12 +234,15 @@ class MixedAtteNsionModule(nn.Module):
 
         self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'])
         self.attention = MultiHeadAtteNsion(config['attention'])
+        self.final_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
     def forward(self, x):
         # (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
         target_q, target_k, target_v = self.depthwise_qkv(x)
         # (B, 1 + N, D)
         x = self.attention(x, target_q, target_k, target_v)
+        # (B, 1 + N, D)
+        x = self.final_proj(x)
 
         # (B, 1 + N, D)
         return x

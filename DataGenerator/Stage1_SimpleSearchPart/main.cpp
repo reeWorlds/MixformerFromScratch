@@ -254,7 +254,7 @@ int main()
 				for (int jj = 0; jj < search_resolution; jj++)
 				{
 					output_p[0] = img_output[thread_id].at<uchar>(ii, jj);
-					search_p++;
+					output_p++;
 				}
 			}
 
