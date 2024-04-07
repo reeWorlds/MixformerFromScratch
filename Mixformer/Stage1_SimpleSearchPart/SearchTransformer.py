@@ -334,8 +334,8 @@ class MaskHead(nn.Module):
 
         self.deconv1 = self.make_deconvolution_block(self.channels)
         self.deconv2 = self.make_deconvolution_block(self.channels // 2)
-        self.conv3 = nn.Conv2d(self.channels // 4, self.channels // 8, 3, 1, 1)
-        self.conv4 = nn.Conv2d(self.channels // 8, 1, 1)
+        self.conv3 = nn.Conv2d(self.channels // 4, self.channels // 4, 3, 1, 1)
+        self.linear = nn.Linear(self.channels // 4, 1)
 
     def make_deconvolution_block(self, channels):
         return nn.Sequential(
@@ -357,16 +357,18 @@ class MaskHead(nn.Module):
         x = self.deconv1(x)
         # (B, C/4, 4*H, 4*W)
         x = self.deconv2(x)
-        # (B, C/8, 4*H, 4*W)
+        # (B, C/4, 4*H, 4*W)
         x = F.relu(self.conv3(x))
-        # (B, 1, 4*H, 4*W)
-        x = self.conv4(x)
+        # (B, 4*h, 4*W, C/4)
+        x = rearrange(x, 'b c h w -> b h w c').contiguous()
+        # (B, 4*H, 4*W, 1)
+        x = self.linear(x)
         # (B, 1, _H, _W)
         assert x.shape == (B, 1, self.search_out_h, self.search_out_w)
 
         # (B, _H, _W)
         x = x.squeeze(1)
-        
+
         # (B, _H, _W)
         return x
 
