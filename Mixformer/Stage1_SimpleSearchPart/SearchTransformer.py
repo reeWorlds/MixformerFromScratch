@@ -41,13 +41,13 @@ class StagePreprocessor(nn.Module):
         assert cls.shape == (B, self.cls_input_size)
 
         # (B, C, Hs, Ws)
-        x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).coNsiguous()
+        x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
         # (B, D, _Hs, _Ws)
         x = self.proj(x)
         # x: (B, D, _Hs, _Ws)
         assert x.shape == (B, self.embed_dim, self.search_out_h, self.search_out_w)
         # (B, _Hs * _Ws, D)
-        x = rearrange(x, 'b d h w -> b (h w) d').coNsiguous()
+        x = rearrange(x, 'b d h w -> b (h w) d').contiguous()
         # (B, _Hs * _Ws, D)
         x = self.norm(x)
 
@@ -100,7 +100,7 @@ class DepthWiseQueryKeyValue(nn.Module):
         self.proj_v = nn.Linear(self.embed_dim, self.embed_dim)
 
     def build_conv_proj(self, channels, kernel_size, padding, stride):
-        proj = nn.SequeNsial(
+        proj = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size, stride, padding, groups=channels),
             nn.ELU(inplace=True),
             nn.BatchNorm2d(channels),
@@ -122,7 +122,7 @@ class DepthWiseQueryKeyValue(nn.Module):
         cls, x = torch.split(x, [1, Ns], dim=1)
         
         # (B, C, Hs, Ws)
-        x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).coNsiguous()
+        x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
         # (B, _Ns, C)
         search_q = self.depthwise_q(x)
         # (B, _Ns, C)
@@ -140,19 +140,19 @@ class DepthWiseQueryKeyValue(nn.Module):
         # (B, 1 + _Ns, C)
         search_q = self.proj_q(search_q)
         # (B, H, 1 + _Ns, C/H)
-        search_q = rearrange(search_q, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).coNsiguous()
+        search_q = rearrange(search_q, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).contiguous()
         # (B, 1 + __Ns, C)
         search_k = torch.cat([cls, search_k], dim=1)
         # (B, 1 + __Ns, C)
         search_k = self.proj_k(search_k)
         # (B, H, 1 + __Ns, C/H)
-        search_k = rearrange(search_k, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).coNsiguous()
+        search_k = rearrange(search_k, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).contiguous()
         # (B, 1 + __Ns, C)
         search_v = torch.cat([cls, search_v], dim=1)
         # (B, 1 + __Ns, C)
         search_v = self.proj_v(search_v)
         # (B, H, 1 + __Ns, C/H)
-        search_v = rearrange(search_v, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).coNsiguous()
+        search_v = rearrange(search_v, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).contiguous()
         
         # (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
         return search_q, search_k, search_v
@@ -184,7 +184,7 @@ class MultiHeadAtteNsion(nn.Module):
         self.drop1 = DropPath(0.2)
         self.norm2 = nn.LayerNorm(self.embed_dim)
         self.drop2 = DropPath(0.2)
-        self.ff_proj = nn.SequeNsial(
+        self.ff_proj = nn.Sequential(
             nn.Linear(self.embed_dim, self.embed_dim * self.ff_scale),
             nn.GELU(),
             nn.Linear(self.embed_dim * self.ff_scale, self.embed_dim)
@@ -207,7 +207,7 @@ class MultiHeadAtteNsion(nn.Module):
         # (B, H, _Ns, D/H)
         search_attn = torch.einsum('bhnm,bhmd->bhnd', [search_attn, search_v])
         # (B, _Ns, D)
-        search_attn = rearrange(search_attn, 'b h n d -> b n (h d)').coNsiguous()
+        search_attn = rearrange(search_attn, 'b h n d -> b n (h d)').contiguous()
         # (B, _Ns, D)
         assert search_attn.shape == (B, 1 + self.search_inp_h * self.search_inp_w, self.embed_dim)
         
@@ -233,13 +233,13 @@ class MixedAtteNsionModule(nn.Module):
         self.embed_dim = config['embed_dim']
 
         self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'])
-        self.atteNsion = MultiHeadAtteNsion(config['atteNsion'])
+        self.attention = MultiHeadAtteNsion(config['attention'])
 
     def forward(self, x):
         # (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
         target_q, target_k, target_v = self.depthwise_qkv(x)
         # (B, 1 + N, D)
-        x = self.atteNsion(x, target_q, target_k, target_v)
+        x = self.attention(x, target_q, target_k, target_v)
 
         # (B, 1 + N, D)
         return x
@@ -307,7 +307,10 @@ class Stage(nn.Module):
             # (B, _Hs * _Ws, D)
             x = mam_block(x)
 
+        # (B, _Hs * _Ws, D), (B, 1, D)
         cls, x = torch.split(x, [1, search_out_size], dim=1)
+        # (B, D)
+        cls = cls.squeeze(1)
 
         # (B, _Hs * _Ws, D), (B, D)
         return x, cls
@@ -335,7 +338,7 @@ class MaskHead(nn.Module):
         self.conv4 = nn.Conv2d(self.channels // 8, 1, 1)
 
     def make_deconvolution_block(self, channels):
-        return nn.SequeNsial(
+        return nn.Sequential(
             nn.Conv2d(channels, channels * 2, 1),
             nn.PixelShuffle(2),
             nn.Conv2d(channels // 2, channels // 2, 3, 1, 1),
@@ -346,10 +349,10 @@ class MaskHead(nn.Module):
     def forward(self, x):
         B = x.shape[0]
         # x: (B, H * W, C)
-        assert x.shape == (B, self.search_h * self.search_w, self.channels)
+        assert x.shape == (B, self.search_inp_h * self.search_inp_w, self.channels)
 
         # (B, C, H, W)
-        x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).coNsiguous()
+        x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
         # (B, C/2, 2*H, 2*W)
         x = self.deconv1(x)
         # (B, C/4, 4*H, 4*W)
@@ -418,10 +421,3 @@ class MixFormer(nn.Module):
 
         # (B, Hs, Ws)
         return output
-
-
-
-
-
-
-
