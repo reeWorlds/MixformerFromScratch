@@ -366,9 +366,7 @@ class MaskHead(nn.Module):
 
         # (B, _H, _W)
         x = x.squeeze(1)
-        ## (B, _H, _W)
-        #x = F.sigmoid(x)
-
+        
         # (B, _H, _W)
         return x
 
