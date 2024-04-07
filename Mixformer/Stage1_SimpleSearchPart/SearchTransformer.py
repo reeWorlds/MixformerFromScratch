@@ -363,11 +363,11 @@ class MaskHead(nn.Module):
         x = rearrange(x, 'b c h w -> b h w c').contiguous()
         # (B, 4*H, 4*W, 1)
         x = self.linear(x)
-        # (B, 1, _H, _W)
-        assert x.shape == (B, 1, self.search_out_h, self.search_out_w)
+        # (B, _H, _W, 1)
+        assert x.shape == (B, self.search_out_h, self.search_out_w, 1)
 
         # (B, _H, _W)
-        x = x.squeeze(1)
+        x = x.squeeze(3)
 
         # (B, _H, _W)
         return x
