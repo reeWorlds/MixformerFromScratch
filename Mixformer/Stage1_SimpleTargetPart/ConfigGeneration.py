@@ -40,8 +40,8 @@ def make_stage_config(c, embd_d, t_h, t_w, n_mam, p_size, p_pad, p_stride, ker_s
                    'num_mam_blocks': n_mam})
     return config
 
-def make_classes_head_config(c, s_h, s_w, lin_sz):
-    config = {'channels': c, 'search_h': s_h, 'search_w': s_w, 'linear_size': lin_sz}
+def make_classes_head_config(c, t_h, t_w, lin_sz):
+    config = {'channels': c, 'target_h': t_h, 'target_w': t_w, 'linear_size': lin_sz}
     return config
 
 def make_mixformer_config(size_type='medium'):

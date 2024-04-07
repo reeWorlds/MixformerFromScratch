@@ -103,7 +103,7 @@ class DepthWiseQueryKeyValue(nn.Module):
         # (B, N, C)
         x = self.norm1(x)
 
-        # x: (B, Ns + Nt, C)
+        # x: (B, Nt, C)
         assert x.shape == (B, Nt, self.embed_dim)
         
         # (B, C, Ht, Wt)
@@ -301,8 +301,8 @@ class ClassesHead(nn.Module):
         super(ClassesHead, self).__init__()
 
         self.channels = config['channels']
-        self.search_h = config['search_h']
-        self.search_w = config['search_w']
+        self.target_h = config['target_h']
+        self.target_w = config['target_w']
         self.linear_size = config['linear_size']
 
         self.conv1 = nn.Conv2d(self.channels, self.channels // 2, 3, padding=1)
@@ -314,10 +314,10 @@ class ClassesHead(nn.Module):
     def forward(self, x):
         B = x.shape[0]
         # x: (B, H * W, C)
-        assert x.shape == (B, self.search_h * self.search_w, self.channels)
+        assert x.shape == (B, self.target_h * self.target_w, self.channels)
 
         # (B, C, H, W)
-        x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_h, w=self.search_w).contiguous()
+        x = rearrange(x, 'b (h w) c -> b c h w', h=self.target_h, w=self.target_w).contiguous()
         # (B, C/2, H, W)
         x = F.relu(self.batchnorm1(self.conv1(x)))
         # (B, C/2)
@@ -339,8 +339,8 @@ class MixFormer(nn.Module):
     """
     MixFormer model.
 
-    Input shape: (B, Hs, Ws, 3), (B, Ht, Wt, 3)
-    Output shape: (B, 4)
+    Input shape: (B, Ht, Wt, 3)
+    Output shape: (B, 5)
     """
     def __init__(self, config):
         super(MixFormer, self).__init__()
