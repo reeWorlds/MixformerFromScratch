@@ -213,15 +213,12 @@ class MixedAttentionModule(nn.Module):
 
         self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'])
         self.attention = MultiHeadAttention(config['attention'])
-        self.final_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
     def forward(self, x):
         # (B, H, _Nt, D/H), (B, H, __Nt, D/H), (B, H, __Nt, D/H)
         target_q, target_k, target_v = self.depthwise_qkv(x)
         # (B, N, D)
         x = self.attention(x, target_q, target_k, target_v)
-        # (B, N, D)
-        x = self.final_proj(x)
 
         # (B, N, D)
         return x
@@ -246,7 +243,7 @@ class Stage(nn.Module):
         self.num_mam_blocks = config['num_mam_blocks']
 
         target_embd = self.get_pos_embd(self.target_out_h * self.target_out_w, self.embed_dim)
-        self.positional_embd = nn.Parameter(target_embd, requires_grad=False)
+        self.register_buffer('positional_embd', target_embd)
         self.preprocessor = StagePreprocessor(config['preprocessor'])
         self.mam_blocks = nn.ModuleList([MixedAttentionModule(config['mam']) for _ in range(self.num_mam_blocks)])
 

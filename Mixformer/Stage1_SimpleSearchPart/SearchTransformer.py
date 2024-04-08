@@ -9,7 +9,7 @@ from timm.models.layers import DropPath
 
 class StagePreprocessor(nn.Module):
     """
-    Preprocess the search and target images to be used by atteNsion mechanism.
+    Preprocess the search and target images to be used by Attention mechanism.
 
     Input shape: (B, Hs * Ws, C), (B, D)
     Output shape: (B, 1 + N, D); N = _Hs * _Ws
@@ -158,15 +158,15 @@ class DepthWiseQueryKeyValue(nn.Module):
         return search_q, search_k, search_v
 
 
-class MultiHeadAtteNsion(nn.Module):
+class MultiHeadAttention(nn.Module):
     """
-    Asymetric Multi-Head AtteNsion Described in the paper.
+    Asymetric Multi-Head Attention Described in the paper.
     
     Input shape: (B, 1 + N, D), (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
     Output shape: (B, 1 + N, D)
     """
     def __init__(self, config):
-        super(MultiHeadAtteNsion, self).__init__()
+        super(MultiHeadAttention, self).__init__()
         assert config['embed_dim'] % config['num_heads'] == 0
 
         self.embed_dim = config['embed_dim']
@@ -220,20 +220,20 @@ class MultiHeadAtteNsion(nn.Module):
         return search_attn
 
 
-class MixedAtteNsionModule(nn.Module):
+class MixedAttentionModule(nn.Module):
     """
-    Mixed AtteNsion Module described in the paper.
+    Mixed Attention Module described in the paper.
 
     Input shape: (B, 1 + N, D)
     Output shape: (B, 1 + N, D)
     """
     def __init__(self, config):
-        super(MixedAtteNsionModule, self).__init__()
+        super(MixedAttentionModule, self).__init__()
 
         self.embed_dim = config['embed_dim']
 
         self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'])
-        self.attention = MultiHeadAtteNsion(config['attention'])
+        self.attention = MultiHeadAttention(config['attention'])
 
     def forward(self, x):
         # (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
@@ -264,9 +264,9 @@ class Stage(nn.Module):
         self.num_mam_blocks = config['num_mam_blocks']
 
         search_embd = self.get_pos_embd(self.search_out_h * self.search_out_w, self.embed_dim)
-        self.positional_embd = nn.Parameter(search_embd, requires_grad=False)
+        self.register_buffer('positional_embd', search_embd)
         self.preprocessor = StagePreprocessor(config['preprocessor'])
-        self.mam_blocks = nn.ModuleList([MixedAtteNsionModule(config['mam']) for _ in range(self.num_mam_blocks)])
+        self.mam_blocks = nn.ModuleList([MixedAttentionModule(config['mam']) for _ in range(self.num_mam_blocks)])
 
     def get_pos_embd(self, n, d):
         assert d % 2 == 0
