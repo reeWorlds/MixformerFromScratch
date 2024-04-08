@@ -1,3 +1,4 @@
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,7 +15,7 @@ class StagePreprocessor(nn.Module):
     Input shape: (B, Hs * Ws, C), (B, D)
     Output shape: (B, 1 + N, D); N = _Hs * _Ws
     """
-    def __init__(self, config):
+    def __init__(self, config, base_model=None):
         super(StagePreprocessor, self).__init__()
 
         self.channels = config['channels']
@@ -28,8 +29,12 @@ class StagePreprocessor(nn.Module):
         self.patch_padding = config['patch_padding']
         self.cls_input_size = config['cls_input_size']
 
-        self.proj = nn.Conv2d(self.channels, self.embed_dim, self.patch_size, self.patch_stride, self.patch_padding)
-        self.norm = nn.LayerNorm(self.embed_dim)
+        if base_model is None:
+            self.proj = nn.Conv2d(self.channels, self.embed_dim, self.patch_size, self.patch_stride, self.patch_padding)
+            self.norm = nn.LayerNorm(self.embed_dim)
+        else:
+            self.proj = copy.deepcopy(base_model.proj)
+            self.norm = copy.deepcopy(base_model.norm)
         self.cls_proj = nn.Linear(self.cls_input_size, self.embed_dim)
 
     def forward(self, x, cls):
@@ -70,7 +75,7 @@ class DepthWiseQueryKeyValue(nn.Module):
     Input shape: (B, 1 + N, C); N = Hs * Ws
     Output shape: (B, H, 1 + _Ns, C/H), (B, H, 1 + __Ns, C/H), (B, H, 1 + __Ns, C/H)
     """
-    def __init__(self, config):
+    def __init__(self, config, base_model=None):
         super(DepthWiseQueryKeyValue, self).__init__()
         assert config['embed_dim'] % config['num_heads'] == 0
         
@@ -89,15 +94,23 @@ class DepthWiseQueryKeyValue(nn.Module):
         self.num_heads = config['num_heads']
         self.head_dim = self.embed_dim // self.num_heads
 
-        self.norm1 = nn.LayerNorm(self.embed_dim)
-
-        self.depthwise_q = self.build_conv_proj(self.embed_dim, self.kernel_size, self.padding_q, self.stride_q)
-        self.depthwise_k = self.build_conv_proj(self.embed_dim, self.kernel_size, self.padding_kv, self.stride_kv)
-        self.depthwise_v = self.build_conv_proj(self.embed_dim, self.kernel_size, self.padding_kv, self.stride_kv)
-
-        self.proj_q = nn.Linear(self.embed_dim, self.embed_dim)
-        self.proj_k = nn.Linear(self.embed_dim, self.embed_dim)
-        self.proj_v = nn.Linear(self.embed_dim, self.embed_dim)
+        if base_model is None:
+            self.norm1 = nn.LayerNorm(self.embed_dim)
+            self.depthwise_q = self.build_conv_proj(self.embed_dim, self.kernel_size, self.padding_q, self.stride_q)
+            self.depthwise_k = self.build_conv_proj(self.embed_dim, self.kernel_size, self.padding_kv, self.stride_kv)
+            self.depthwise_v = self.build_conv_proj(self.embed_dim, self.kernel_size, self.padding_kv, self.stride_kv)
+            self.proj_q = nn.Linear(self.embed_dim, self.embed_dim)
+            self.proj_k = nn.Linear(self.embed_dim, self.embed_dim)
+            self.proj_v = nn.Linear(self.embed_dim, self.embed_dim)
+        else:
+            self.norm1 = copy.deepcopy(base_model.norm1)
+            self.depthwise_q = copy.deepcopy(base_model.depthwise_q)
+            self.depthwise_k = copy.deepcopy(base_model.depthwise_k)
+            self.depthwise_v = copy.deepcopy(base_model.depthwise_v)
+            self.proj_q = copy.deepcopy(base_model.proj_q)
+            self.proj_k = copy.deepcopy(base_model.proj_k)
+            self.proj_v = copy.deepcopy(base_model.proj_v)
+        self.cls_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
     def build_conv_proj(self, channels, kernel_size, padding, stride):
         proj = nn.Sequential(
@@ -120,7 +133,9 @@ class DepthWiseQueryKeyValue(nn.Module):
 
         # (B, 1, C), (B, Ns, C)
         cls, x = torch.split(x, [1, Ns], dim=1)
-        
+
+        # (B, 1, C)
+        cls = self.cls_proj(cls)
         # (B, C, Hs, Ws)
         x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
         # (B, _Ns, C)
@@ -165,7 +180,7 @@ class MultiHeadAttention(nn.Module):
     Input shape: (B, 1 + N, D), (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
     Output shape: (B, 1 + N, D)
     """
-    def __init__(self, config):
+    def __init__(self, config, base_model=None):
         super(MultiHeadAttention, self).__init__()
         assert config['embed_dim'] % config['num_heads'] == 0
 
@@ -181,14 +196,20 @@ class MultiHeadAttention(nn.Module):
         self.scale = 1 / (self.head_dim ** 0.5)
         self.ff_scale = config['ff_scale']
 
-        self.drop1 = DropPath(0.2)
-        self.norm2 = nn.LayerNorm(self.embed_dim)
-        self.drop2 = DropPath(0.2)
-        self.ff_proj = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim * self.ff_scale),
-            nn.GELU(),
-            nn.Linear(self.embed_dim * self.ff_scale, self.embed_dim)
-        )
+        if base_model is None:
+            self.drop1 = DropPath(0.2)
+            self.norm2 = nn.LayerNorm(self.embed_dim)
+            self.drop2 = DropPath(0.2)
+            self.ff_proj = nn.Sequential(
+                nn.Linear(self.embed_dim, self.embed_dim * self.ff_scale),
+                nn.GELU(),
+                nn.Linear(self.embed_dim * self.ff_scale, self.embed_dim)
+            )
+        else:
+            self.drop1 = copy.deepcopy(base_model.drop1)
+            self.norm2 = copy.deepcopy(base_model.norm2)
+            self.drop2 = copy.deepcopy(base_model.drop2)
+            self.ff_proj = copy.deepcopy(base_model.ff_proj)
 
     def forward(self, x, search_q, search_k, search_v):
         B = search_q.shape[0]
@@ -227,13 +248,17 @@ class MixedAttentionModule(nn.Module):
     Input shape: (B, 1 + N, D)
     Output shape: (B, 1 + N, D)
     """
-    def __init__(self, config):
+    def __init__(self, config, base_model=None):
         super(MixedAttentionModule, self).__init__()
 
         self.embed_dim = config['embed_dim']
 
-        self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'])
-        self.attention = MultiHeadAttention(config['attention'])
+        if base_model is None:
+            self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'])
+            self.attention = MultiHeadAttention(config['attention'])
+        else:
+            self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'], base_model.depthwise_qkv)
+            self.attention = MultiHeadAttention(config['attention'], base_model.attention)
 
     def forward(self, x):
         # (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
@@ -252,7 +277,7 @@ class Stage(nn.Module):
     Input shape: (B, Hs * Ws, C), (B, _C)
     Output shape: (B, _Hs * _Ws, D), (B, D)
     """
-    def __init__(self, config):
+    def __init__(self, config, base_model=None):
         super(Stage, self).__init__()
         
         self.channels = config['channels']
@@ -265,8 +290,13 @@ class Stage(nn.Module):
 
         search_embd = self.get_pos_embd(self.search_out_h * self.search_out_w, self.embed_dim)
         self.register_buffer('positional_embd', search_embd)
-        self.preprocessor = StagePreprocessor(config['preprocessor'])
-        self.mam_blocks = nn.ModuleList([MixedAttentionModule(config['mam']) for _ in range(self.num_mam_blocks)])
+        if base_model is None:
+            self.preprocessor = StagePreprocessor(config['preprocessor'])
+            self.mam_blocks = nn.ModuleList([MixedAttentionModule(config['mam']) for _ in range(self.num_mam_blocks)])
+        else:
+            self.preprocessor = StagePreprocessor(config['preprocessor'], base_model.preprocessor)
+            self.mam_blocks = nn.ModuleList([MixedAttentionModule(config['mam'], base_model.mam_blocks[i])
+                                             for i in range(self.num_mam_blocks)])
 
     def get_pos_embd(self, n, d):
         assert d % 2 == 0
@@ -323,8 +353,9 @@ class MaskHead(nn.Module):
     Input shape: (B, H * W, C)
     Output shape: (B, _H, _W)
     """
-    def __init__(self, config):
+    def __init__(self, config, base_model=None):
         super(MaskHead, self).__init__()
+        assert base_model is None
 
         self.channels = config['channels']
         self.search_inp_h = config['search_inp_h']
@@ -380,7 +411,7 @@ class MixFormer(nn.Module):
     Input shape: (B, Hs, Ws, 3)
     Output shape: (B, Hs, Ws)
     """
-    def __init__(self, config):
+    def __init__(self, config, base_model=None):
         super(MixFormer, self).__init__()
         
         self.search_inp_h = config['search_inp_h']
@@ -392,7 +423,11 @@ class MixFormer(nn.Module):
         self.start_class_embed = config['start_class_embed']
 
         self.class_type_embeding = nn.Embedding(5, self.start_class_embed)
-        self.stages = nn.ModuleList([Stage(config[f'stage_{i}']) for i in range(self.num_stages)])
+        if base_model is None:
+            self.stages = nn.ModuleList([Stage(config[f'stage_{i}']) for i in range(self.num_stages)])
+        else:
+            self.stages = nn.ModuleList([Stage(config[f'stage_{i}'], base_model.stages[i])
+                                         for i in range(self.num_stages)])
         self.mask_head = MaskHead(config['mask_head'])
 
     def forward(self, search, class_index):
@@ -421,3 +456,24 @@ class MixFormer(nn.Module):
 
         # (B, Hs, Ws)
         return output
+    
+    def freeze_base_parameters(self, requires_grad=False):
+        for stage in self.stages:
+            self._set_requires_grad(stage.preprocessor.proj, requires_grad)
+            self._set_requires_grad(stage.preprocessor.norm, requires_grad)
+            for mam_block in stage.mam_blocks:
+                self._set_requires_grad(mam_block.depthwise_qkv.norm1, requires_grad)
+                self._set_requires_grad(mam_block.depthwise_qkv.depthwise_q, requires_grad)
+                self._set_requires_grad(mam_block.depthwise_qkv.depthwise_k, requires_grad)
+                self._set_requires_grad(mam_block.depthwise_qkv.depthwise_v, requires_grad)
+                self._set_requires_grad(mam_block.depthwise_qkv.proj_q, requires_grad)
+                self._set_requires_grad(mam_block.depthwise_qkv.proj_k, requires_grad)
+                self._set_requires_grad(mam_block.depthwise_qkv.proj_v, requires_grad)
+                self._set_requires_grad(mam_block.attention.drop1, requires_grad)
+                self._set_requires_grad(mam_block.attention.norm2, requires_grad)
+                self._set_requires_grad(mam_block.attention.drop2, requires_grad)
+                self._set_requires_grad(mam_block.attention.ff_proj, requires_grad)
+
+    def _set_requires_grad(self, module, requires_grad):
+        for param in module.parameters():
+            param.requires_grad = requires_grad
