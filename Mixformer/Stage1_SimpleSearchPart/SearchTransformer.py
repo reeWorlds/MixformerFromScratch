@@ -474,11 +474,14 @@ class MixFormer(nn.Module):
                 self._set_requires_grad(mam_block.attention.drop2, requires_grad)
                 self._set_requires_grad(mam_block.attention.ff_proj, requires_grad)
 
-    def freeze_head_parameters(self, requires_grad=False):
+    def freeze_common_cls_parameters(self, requires_grad=False):
         self._set_requires_grad(self.mask_head.deconv1, requires_grad)
         self._set_requires_grad(self.mask_head.deconv2, requires_grad)
         self._set_requires_grad(self.mask_head.conv3, requires_grad)
         self._set_requires_grad(self.mask_head.linear, requires_grad)
+        for stage in self.stages:
+            for mam_block in stage.mam_blocks:
+                self._set_requires_grad(mam_block.depthwise_qkv.cls_proj, requires_grad)
 
     def _set_requires_grad(self, module, requires_grad):
         for param in module.parameters():
