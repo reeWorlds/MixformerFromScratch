@@ -480,6 +480,7 @@ class MixFormer(nn.Module):
         self._set_requires_grad(self.mask_head.conv3, requires_grad)
         self._set_requires_grad(self.mask_head.linear, requires_grad)
         for stage in self.stages:
+            self._set_requires_grad(stage.preprocessor.cls_proj, requires_grad)
             for mam_block in stage.mam_blocks:
                 self._set_requires_grad(mam_block.depthwise_qkv.cls_proj, requires_grad)
 
