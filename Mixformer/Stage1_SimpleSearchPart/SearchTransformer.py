@@ -428,7 +428,7 @@ class MixFormer(nn.Module):
         # (B, Hs, Ws)
         return output
 
-    def set_requires_grad(self, requires_grad=False):
+    def set_base_requires_grad(self, requires_grad=False):
         for stage in self.stages:
             self._set_requires_grad(stage.preprocessor.proj, requires_grad)
             self._set_requires_grad(stage.preprocessor.norm, requires_grad)
