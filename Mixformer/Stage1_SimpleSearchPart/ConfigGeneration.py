@@ -1,7 +1,6 @@
-def make_preprocessor_config(c, embd_d, s_h, s_w, p_size, p_pad, p_stride, cls_inp_sz):
+def make_preprocessor_config(c, embd_d, s_h, s_w, p_size, p_pad, p_stride):
     config = {'channels': c, 'embed_dim': embd_d, 'search_inp_h': s_h, 'search_inp_w': s_w,
-              'patch_size': p_size, 'patch_padding': p_pad, 'patch_stride': p_stride,
-              'cls_input_size': cls_inp_sz}
+              'patch_size': p_size, 'patch_padding': p_pad, 'patch_stride': p_stride}
     new_size = lambda x: (x - p_size + 2 * p_pad) // p_stride + 1
     config.update({'search_out_h': new_size(s_h), 'search_out_w': new_size(s_w)})
     return config
@@ -31,8 +30,8 @@ def make_mam_config(embd_d, s_h, s_w, ker_size, pad_q, stride_q, pad_kv, stride_
     return config
 
 def make_stage_config(c, embd_d, s_h, s_w, n_mam, p_size, p_pad, p_stride, ker_size,
-                      pad_q, stride_q, pad_kv, stride_kv, n_heads, ff_scale, st_cls_embed):
-    prep = make_preprocessor_config(c, embd_d, s_h, s_w, p_size, p_pad, p_stride, st_cls_embed)
+                      pad_q, stride_q, pad_kv, stride_kv, n_heads, ff_scale):
+    prep = make_preprocessor_config(c, embd_d, s_h, s_w, p_size, p_pad, p_stride)
     config = {'channels': c, 'embed_dim': embd_d, 'search_inp_h': s_h, 'search_inp_w': s_w,
               'preprocessor': prep}
     config['mam'] = make_mam_config(embd_d, prep['search_out_h'], prep['search_out_w'], ker_size,
@@ -49,7 +48,6 @@ def make_mask_head_config(c, s_h, s_w, s_inis_h, s_inis_w):
 def make_mixformer_config(size_type='medium'):
     num_stages = 2
     lst_stg = num_stages - 1
-    st_cls_embed = 64
     if size_type == 'small':
         embds, n_heads, num_mams = [32, 64], [1, 2], [2, 4]
     elif size_type == 'medium':
@@ -60,12 +58,12 @@ def make_mixformer_config(size_type='medium'):
         raise ValueError(f'Invalid size type {size_type}')
     config = {'search_inp_h': 64, 'search_inp_w': 64, 'num_stages': num_stages}
     config['stage_0'] = make_stage_config(3, embds[0], 64, 64, num_mams[0], 5, 2, 2, 3, 1, 1, 1, 2,
-                                          n_heads[0], 3, st_cls_embed)
+                                          n_heads[0], 3)
     config['stage_1'] = make_stage_config(embds[0], embds[1], 32, 32, num_mams[1], 3, 1, 2, 3, 1, 1, 1, 2,
-                                          n_heads[1], 3, embds[0])
+                                          n_heads[1], 3)
     config['mask_head'] = make_mask_head_config(embds[lst_stg], config[f'stage_{lst_stg}']['search_out_h'],
                                                    config[f'stage_{lst_stg}']['search_out_w'], 64, 64)
     config.update({'search_out_h': config[f'stage_{lst_stg}']['search_out_h'],
                    'search_out_w': config[f'stage_{lst_stg}']['search_out_w'],
-                   'out_embed_dim': embds[lst_stg], 'start_class_embed': st_cls_embed})
+                   'out_embed_dim': embds[lst_stg]})
     return config

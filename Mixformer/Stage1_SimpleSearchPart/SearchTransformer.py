@@ -12,8 +12,8 @@ class StagePreprocessor(nn.Module):
     """
     Preprocess the search and target images to be used by Attention mechanism.
 
-    Input shape: (B, Hs * Ws, C), (B, D)
-    Output shape: (B, 1 + N, D); N = _Hs * _Ws
+    Input shape: (B, Hs * Ws, C)
+    Output shape: (B, N, D); N = _Hs * _Ws
     """
     def __init__(self, config, base_model=None):
         super(StagePreprocessor, self).__init__()
@@ -27,7 +27,6 @@ class StagePreprocessor(nn.Module):
         self.patch_size = config['patch_size']
         self.patch_stride = config['patch_stride']
         self.patch_padding = config['patch_padding']
-        self.cls_input_size = config['cls_input_size']
 
         if base_model is None:
             self.proj = nn.Conv2d(self.channels, self.embed_dim, self.patch_size, self.patch_stride, self.patch_padding)
@@ -35,15 +34,12 @@ class StagePreprocessor(nn.Module):
         else:
             self.proj = copy.deepcopy(base_model.proj)
             self.norm = copy.deepcopy(base_model.norm)
-        self.cls_proj = nn.Linear(self.cls_input_size, self.embed_dim)
 
-    def forward(self, x, cls):
+    def forward(self, x):
         B = x.shape[0]
 
         # x: (B, Hs * Ws, C)
         assert x.shape == (B, self.search_inp_h * self.search_inp_w, self.channels)
-        # cls: (B, _C)
-        assert cls.shape == (B, self.cls_input_size)
 
         # (B, C, Hs, Ws)
         x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
@@ -56,15 +52,7 @@ class StagePreprocessor(nn.Module):
         # (B, _Hs * _Ws, D)
         x = self.norm(x)
 
-        # (B, 1, D)
-        cls = self.cls_proj(cls).unsqueeze(1)
-        # (B, 1, D)
-        assert cls.shape == (B, 1, self.embed_dim)
-
-        # (B, 1 + _Hs * _Ws, D)
-        x = torch.cat([cls, x], dim=1)
-
-        # (B, 1 + N, D)
+        # (B, N, D)
         return x
 
 
@@ -72,8 +60,8 @@ class DepthWiseQueryKeyValue(nn.Module):
     """
     Depth-wise CNN + query, key, value projection.
 
-    Input shape: (B, 1 + N, C); N = Hs * Ws
-    Output shape: (B, H, 1 + _Ns, C/H), (B, H, 1 + __Ns, C/H), (B, H, 1 + __Ns, C/H)
+    Input shape: (B, N, C); N = Hs * Ws
+    Output shape: (B, H, _Ns, C/H), (B, H, __Ns, C/H), (B, H, __Ns, C/H)
     """
     def __init__(self, config, base_model=None):
         super(DepthWiseQueryKeyValue, self).__init__()
@@ -110,7 +98,6 @@ class DepthWiseQueryKeyValue(nn.Module):
             self.proj_q = copy.deepcopy(base_model.proj_q)
             self.proj_k = copy.deepcopy(base_model.proj_k)
             self.proj_v = copy.deepcopy(base_model.proj_v)
-        self.cls_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
     def build_conv_proj(self, channels, kernel_size, padding, stride):
         proj = nn.Sequential(
@@ -125,17 +112,12 @@ class DepthWiseQueryKeyValue(nn.Module):
         B = x.shape[0]
         Ns = self.search_inp_h * self.search_inp_w
 
-        # (B, 1 + N, C)
+        # (B, N, C)
         x = self.norm1(x)
 
-        # x: (B, 1 + Ns, C)
-        assert x.shape == (B, 1 + Ns, self.embed_dim)
+        # x: (B, Ns, C)
+        assert x.shape == (B, Ns, self.embed_dim)
 
-        # (B, 1, C), (B, Ns, C)
-        cls, x = torch.split(x, [1, Ns], dim=1)
-
-        # (B, 1, C)
-        cls = self.cls_proj(cls)
         # (B, C, Hs, Ws)
         x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
         # (B, _Ns, C)
@@ -150,26 +132,20 @@ class DepthWiseQueryKeyValue(nn.Module):
         search_v = self.depthwise_v(x)
         # (B, __Ns, C)
         assert search_v.shape == (B, self.search_kv_h * self.search_kv_w, self.embed_dim)
-        # (B, 1 + _Ns, C)
-        search_q = torch.cat([cls, search_q], dim=1)
-        # (B, 1 + _Ns, C)
+        # (B, _Ns, C)
         search_q = self.proj_q(search_q)
-        # (B, H, 1 + _Ns, C/H)
+        # (B, H, _Ns, C/H)
         search_q = rearrange(search_q, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).contiguous()
-        # (B, 1 + __Ns, C)
-        search_k = torch.cat([cls, search_k], dim=1)
-        # (B, 1 + __Ns, C)
+        # (B, __Ns, C)
         search_k = self.proj_k(search_k)
-        # (B, H, 1 + __Ns, C/H)
+        # (B, H, __Ns, C/H)
         search_k = rearrange(search_k, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).contiguous()
-        # (B, 1 + __Ns, C)
-        search_v = torch.cat([cls, search_v], dim=1)
-        # (B, 1 + __Ns, C)
+        # (B, __Ns, C)
         search_v = self.proj_v(search_v)
-        # (B, H, 1 + __Ns, C/H)
+        # (B, H, __Ns, C/H)
         search_v = rearrange(search_v, 'b n (h d) -> b h n d', h=self.num_heads, d=self.head_dim).contiguous()
         
-        # (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
+        # (B, H, _Ns, D/H), (B, H, __Ns, D/H), (B, H, __Ns, D/H)
         return search_q, search_k, search_v
 
 
@@ -177,8 +153,8 @@ class MultiHeadAttention(nn.Module):
     """
     Asymetric Multi-Head Attention Described in the paper.
     
-    Input shape: (B, 1 + N, D), (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
-    Output shape: (B, 1 + N, D)
+    Input shape: (B, N, D), (B, H, _Ns, D/H), (B, H, __Ns, D/H), (B, H, __Ns, D/H)
+    Output shape: (B, N, D)
     """
     def __init__(self, config, base_model=None):
         super(MultiHeadAttention, self).__init__()
@@ -215,11 +191,11 @@ class MultiHeadAttention(nn.Module):
         B = search_q.shape[0]
 
         # search_q: (B, H, _Ns, D/H)
-        assert search_q.shape == (B, self.num_heads, 1 + self.search_q_h * self.search_q_w, self.head_dim)
+        assert search_q.shape == (B, self.num_heads, self.search_q_h * self.search_q_w, self.head_dim)
         # search_k: (B, H, __Ns, D/H)
-        assert search_k.shape == (B, self.num_heads, 1 + self.search_kv_h * self.search_kv_w, self.head_dim)
+        assert search_k.shape == (B, self.num_heads, self.search_kv_h * self.search_kv_w, self.head_dim)
         # search_v: (B, H, __Ns, D/H)
-        assert search_v.shape == (B, self.num_heads, 1 + self.search_kv_h * self.search_kv_w, self.head_dim)
+        assert search_v.shape == (B, self.num_heads, self.search_kv_h * self.search_kv_w, self.head_dim)
 
         # (B, H, _Ns, __Ns)
         search_attn = torch.einsum('bhnd,bhmd->bhnm', [search_q, search_k]) * self.scale
@@ -230,11 +206,11 @@ class MultiHeadAttention(nn.Module):
         # (B, _Ns, D)
         search_attn = rearrange(search_attn, 'b h n d -> b n (h d)').contiguous()
         # (B, _Ns, D)
-        assert search_attn.shape == (B, 1 + self.search_inp_h * self.search_inp_w, self.embed_dim)
+        assert search_attn.shape == (B, self.search_inp_h * self.search_inp_w, self.embed_dim)
         
-        # (B, [1 +] _Ns + _Ns, D)
+        # (B, _Ns, D)
         x = x + self.drop1(search_attn)
-        # (B, [1 +] _Ns + _Ns, D)
+        # (B, _Ns, D)
         x = x + self.drop1(self.ff_proj(self.norm2(x)))
 
         # (B, N, D)
@@ -245,8 +221,8 @@ class MixedAttentionModule(nn.Module):
     """
     Mixed Attention Module described in the paper.
 
-    Input shape: (B, 1 + N, D)
-    Output shape: (B, 1 + N, D)
+    Input shape: (B, N, D)
+    Output shape: (B, N, D)
     """
     def __init__(self, config, base_model=None):
         super(MixedAttentionModule, self).__init__()
@@ -261,12 +237,12 @@ class MixedAttentionModule(nn.Module):
             self.attention = MultiHeadAttention(config['attention'], base_model.attention)
 
     def forward(self, x):
-        # (B, H, 1 + _Ns, D/H), (B, H, 1 + __Ns, D/H), (B, H, 1 + __Ns, D/H)
+        # (B, H, _Ns, D/H), (B, H, __Ns, D/H), (B, H, __Ns, D/H)
         target_q, target_k, target_v = self.depthwise_qkv(x)
-        # (B, 1 + N, D)
+        # (B, N, D)
         x = self.attention(x, target_q, target_k, target_v)
 
-        # (B, 1 + N, D)
+        # (B, N, D)
         return x
 
 
@@ -274,8 +250,8 @@ class Stage(nn.Module):
     """
     One stage of the ConvolutionalVisioNsransformer (CVT) model.
     
-    Input shape: (B, Hs * Ws, C), (B, _C)
-    Output shape: (B, _Hs * _Ws, D), (B, D)
+    Input shape: (B, Hs * Ws, C)
+    Output shape: (B, _Hs * _Ws, D)
     """
     def __init__(self, config, base_model=None):
         super(Stage, self).__init__()
@@ -313,44 +289,36 @@ class Stage(nn.Module):
         # (N, D)
         pos_embd[:, 1::2] = torch.cos(position * div_term) * scale_coef
 
-        # (1 + N, D)
-        pos_embd = torch.cat([torch.zeros((1, d)), pos_embd], dim=0)
-
-        # (1 + N, D)
+        # (N, D)
         return pos_embd
 
-    def forward(self, x, cls):
+    def forward(self, x):
         B = x.shape[0]
         search_inp_size = self.search_inp_h * self.search_inp_w
         search_out_size = self.search_out_h * self.search_out_w
         # x: (B, Hs * Ws, C)
         assert x.shape == (B, search_inp_size, self.channels)
 
-        # (B, 1 + _Hs * _Ws, D)
-        x = self.preprocessor(x, cls)
-        # x: (B, 1 + _Hs * _Ws, D)
-        assert x.shape == (B, 1 + search_out_size, self.embed_dim)
-        # (B, 1 + _Hs * _Ws, D)
+        # (B, _Hs * _Ws, D)
+        x = self.preprocessor(x)
+        # x: (B, _Hs * _Ws, D)
+        assert x.shape == (B, search_out_size, self.embed_dim)
+        # (B, _Hs * _Ws, D)
         x = x + self.positional_embd.expand(B, -1, -1)
 
         for mam_block in self.mam_blocks:
             # (B, _Hs * _Ws, D)
             x = mam_block(x)
 
-        # (B, _Hs * _Ws, D), (B, 1, D)
-        cls, x = torch.split(x, [1, search_out_size], dim=1)
-        # (B, D)
-        cls = cls.squeeze(1)
-
-        # (B, _Hs * _Ws, D), (B, D)
-        return x, cls
+        # (B, _Hs * _Ws, D)
+        return x
 
 
 class MaskHead(nn.Module):
     """
     Module prepended to Mixformer backbone to predict class of each pixel.
 
-    Input shape: (B, H * W, C)
+    Input shape: (B, H * W, C), (B)
     Output shape: (B, _H, _W)
     """
     def __init__(self, config, base_model=None):
@@ -363,6 +331,7 @@ class MaskHead(nn.Module):
         self.search_out_h = config['search_out_h']
         self.search_out_w = config['search_out_w']
 
+        self.class_type_embeding = nn.Embedding(5, self.channels)
         self.deconv1 = self.make_deconvolution_block(self.channels)
         self.deconv2 = self.make_deconvolution_block(self.channels // 2)
         self.conv3 = nn.Conv2d(self.channels // 4, self.channels // 4, 3, 1, 1)
@@ -377,10 +346,16 @@ class MaskHead(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-    def forward(self, x):
+    def forward(self, x, class_index):
         B = x.shape[0]
+        input_size = self.search_inp_h * self.search_inp_w
         # x: (B, H * W, C)
         assert x.shape == (B, self.search_inp_h * self.search_inp_w, self.channels)
+
+        # (B, H * W, C)
+        cls = self.class_type_embeding(class_index).unsqueeze(1).expand(-1, input_size, -1)
+        # (B, H * W, C)
+        x = x + cls
 
         # (B, C, H, W)
         x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
@@ -420,9 +395,7 @@ class MixFormer(nn.Module):
         self.search_out_w = config['search_out_w']
         self.out_embed_dim = config['out_embed_dim']
         self.num_stages = config['num_stages']
-        self.start_class_embed = config['start_class_embed']
-
-        self.class_type_embeding = nn.Embedding(5, self.start_class_embed)
+        
         if base_model is None:
             self.stages = nn.ModuleList([Stage(config[f'stage_{i}']) for i in range(self.num_stages)])
         else:
@@ -439,25 +412,23 @@ class MixFormer(nn.Module):
 
         # (B, Hs * Ws, C)
         x = search.view(B, search_inp_size, 3)
-        # (B, D)
-        cls = self.class_type_embeding(class_index)
 
         for stage in self.stages:
             # (B, _Hs * _Ws, D)
-            x, cls = stage(x, cls)
+            x = stage(x)
 
         # x: (B, _Hs * _Ws, D)
         assert x.shape == (B, search_out_size, self.out_embed_dim)
 
         # (B, _Hs, _Ws)
-        output = self.mask_head(x)
+        output = self.mask_head(x, class_index)
         # output: (B, Hs, Ws)
         assert output.shape == (B, self.search_inp_h, self.search_inp_w)
 
         # (B, Hs, Ws)
         return output
 
-    def freeze_base_parameters(self, requires_grad=False):
+    def set_requires_grad(self, requires_grad=False):
         for stage in self.stages:
             self._set_requires_grad(stage.preprocessor.proj, requires_grad)
             self._set_requires_grad(stage.preprocessor.norm, requires_grad)
@@ -473,16 +444,6 @@ class MixFormer(nn.Module):
                 self._set_requires_grad(mam_block.attention.norm2, requires_grad)
                 self._set_requires_grad(mam_block.attention.drop2, requires_grad)
                 self._set_requires_grad(mam_block.attention.ff_proj, requires_grad)
-
-    def freeze_common_cls_parameters(self, requires_grad=False):
-        self._set_requires_grad(self.mask_head.deconv1, requires_grad)
-        self._set_requires_grad(self.mask_head.deconv2, requires_grad)
-        self._set_requires_grad(self.mask_head.conv3, requires_grad)
-        self._set_requires_grad(self.mask_head.linear, requires_grad)
-        for stage in self.stages:
-            self._set_requires_grad(stage.preprocessor.cls_proj, requires_grad)
-            for mam_block in stage.mam_blocks:
-                self._set_requires_grad(mam_block.depthwise_qkv.cls_proj, requires_grad)
 
     def _set_requires_grad(self, module, requires_grad):
         for param in module.parameters():
