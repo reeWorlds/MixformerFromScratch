@@ -159,7 +159,7 @@ class Decoder(nn.Module):
         self.cnn2 = nn.Conv2d(self.part2_channels, self.part1_channels * 4, kernel_size=1, stride=1, padding=0)
         self.upsampler2 = nn.PixelShuffle(2)
         self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(2)])
-        self.cnn1 = nn.Conv2d(self.part1_channels, 3, kernel_size=5, stride=1, padding=2)
+        self.cnn1 = nn.Conv2d(self.part1_channels, 3, kernel_size=3, stride=1, padding=1)
 
     def forward(self, x, x_type):
         B = x.shape[0]
@@ -199,7 +199,7 @@ class Decoder(nn.Module):
         x = F.relu(self.upsampler2(self.cnn2(x)))
         for block in self.block1:
             x = block(x)
-        x = F.sigmoid(self.cnn1(x))
+        x = self.cnn1(x)
         x = rearrange(x, 'b c h w -> b h w c')
 
         return x
