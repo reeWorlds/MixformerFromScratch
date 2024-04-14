@@ -33,26 +33,38 @@ class Encoder(nn.Module):
         self.target_w = config["target_w"]
         self.search_h = config["search_h"]
         self.search_w = config["search_w"]
+        self.target_out_h = config["target_out_h"]
+        self.target_out_w = config["target_out_w"]
+        self.search_out_h = config["search_out_h"]
+        self.search_out_w = config["search_out_w"]
         self.pos_enc_channels = config["pos_enc_channels"]
         self.type_channels = config["type_channels"]
         self.embeddings = config["embeddings"]
+        self.agg_channels = config["agg_channels"]
+        self.agg_size = config["agg_size"]
 
         self.cnn1 = nn.Conv2d(3, self.part1_channels, kernel_size=5, stride=1, padding=2)
         self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(2)])
-        self.cnn2 = nn.Conv2d(self.part1_channels, self.part2_channels, kernel_size=3, stride=1, padding=1)
+        self.cnn2 = nn.Conv2d(self.part1_channels, self.part2_channels, kernel_size=3, stride=2, padding=1)
         self.block2 = nn.ModuleList([ResNetBlock(config["block2"]) for _ in range(2)])
-        self.cnn3 = nn.Conv2d(self.part2_channels, self.part3_channels, kernel_size=3, stride=1, padding=1)
-        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(2)])
+        self.cnn3 = nn.Conv2d(self.part2_channels, self.part3_channels, kernel_size=3, stride=2, padding=1)
+        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(3)])
         
-        target_weights = torch.randn(self.pos_enc_channels, self.target_h, self.target_w)
+        target_weights = torch.randn(self.pos_enc_channels, self.target_out_h, self.target_out_w)
         self.register_parameter('target_pos_embedding', nn.Parameter(target_weights))
-        search_weights = torch.randn(self.pos_enc_channels, self.search_h, self.search_w)
+        search_weights = torch.randn(self.pos_enc_channels, self.search_out_h, self.search_out_w)
         self.register_parameter('search_pos_embedding', nn.Parameter(search_weights))
         self.type_embedding = nn.Embedding(2, self.type_channels)
 
+        self.agg_linear1 = nn.Linear(self.part3_channels, self.agg_channels)
+        self.target_agg_linear2 = nn.Linear(self.target_out_h * self.target_out_w * self.agg_channels,
+                                            self.agg_size)
+        self.search_agg_linear2 = nn.Linear(self.search_out_h * self.search_out_w * self.agg_channels,
+                                            self.agg_size)
+
         self.drop1 = nn.Dropout(0.3)
-        self.linear1 = nn.Linear(self.part3_channels + self.pos_enc_channels + self.type_channels,
-                                 self.embeddings)
+        self.linear1 = nn.Linear(self.part3_channels + self.pos_enc_channels + self.type_channels +
+                                 self.agg_size, self.embeddings)
         self.linear2 = nn.Linear(self.embeddings, self.embeddings)
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
 
@@ -71,12 +83,25 @@ class Encoder(nn.Module):
         for block in self.block3:
             x = block(x)
 
-        pos_embedding = self.target_pos_embedding if x_type == 0 else self.search_pos_embedding
-        pos_embedding = pos_embedding.repeat(B, 1, 1, 1)
-        type_embedding = self.type_embedding(x_type).repeat(B, 1)
-        type_embedding = type_embedding.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, x.shape[2], x.shape[3])
+        y = rearrange(x, 'b c h w -> b h w c')
+        y = F.relu(self.agg_linear1(y))
+        y = y.view(B, -1)
+        if x_type.item() == 0:
+            y = self.target_agg_linear2(y).unsqueeze(-1).unsqueeze(-1)
+            y = y.repeat(1, 1, self.target_out_h, self.target_out_w)
+        else:
+            y = self.search_agg_linear2(y).unsqueeze(-1).unsqueeze(-1)
+            y = y.repeat(1, 1, self.search_out_h, self.search_out_w)
 
-        x = torch.cat([x, pos_embedding, type_embedding], dim=1)
+        type_embedding = self.type_embedding(x_type).repeat(B, 1).unsqueeze(-1).unsqueeze(-1)
+        if x_type.item() == 0:
+            pos_embedding = self.target_pos_embedding.repeat(B, 1, 1, 1)
+            type_embedding = type_embedding.repeat(1, 1, self.target_out_h, self.target_out_w)
+        else:
+            pos_embedding = self.search_pos_embedding.repeat(B, 1, 1, 1)
+            type_embedding = type_embedding.repeat(1, 1, self.search_out_h, self.search_out_w)
+
+        x = torch.cat([x, y, pos_embedding, type_embedding], dim=1)
         x = rearrange(x, 'b c h w -> b h w c')
 
         x = self.drop1(x)
@@ -96,6 +121,12 @@ class Decoder(nn.Module):
         self.target_w = config["target_w"]
         self.search_h = config["search_h"]
         self.search_w = config["search_w"]
+        self.target_out_h = config["target_out_h"]
+        self.target_out_w = config["target_out_w"]
+        self.search_out_h = config["search_out_h"]
+        self.search_out_w = config["search_out_w"]
+        self.agg_channels = config["agg_channels"]
+        self.agg_size = config["agg_size"]
         self.pos_enc_channels = config["pos_enc_channels"]
         self.type_channels = config["type_channels"]
         self.embeddings = config["embeddings"]
@@ -103,35 +134,57 @@ class Decoder(nn.Module):
         self.part2_channels = config["part2_channels"]
         self.part1_channels = config["part1_channels"]
 
-        target_weights = torch.randn(self.pos_enc_channels, self.target_h, self.target_w)
+        self.agg_linear1 = nn.Linear(self.embeddings, self.agg_size)
+        self.target_agg_linear2 = nn.Linear(self.agg_size, self.target_out_h * self.target_out_w *
+                                            self.agg_channels)
+        self.search_agg_linear2 = nn.Linear(self.agg_size, self.search_out_h * self.search_out_w *
+                                            self.agg_channels)
+        self.agg_linear3 = nn.Linear(self.agg_channels, self.agg_size)
+
+        target_weights = torch.randn(self.pos_enc_channels, self.target_out_h, self.target_out_w)
         self.register_parameter('target_pos_embedding', nn.Parameter(target_weights))
-        search_weights = torch.randn(self.pos_enc_channels, self.search_h, self.search_w)
+        search_weights = torch.randn(self.pos_enc_channels, self.search_out_h, self.search_out_w)
         self.register_parameter('search_pos_embedding', nn.Parameter(search_weights))
         self.type_embedding = nn.Embedding(2, self.type_channels)
 
-        self.linear1 = nn.Linear(self.embeddings + self.pos_enc_channels + self.type_channels,
+        self.linear1 = nn.Linear(self.embeddings + self.pos_enc_channels + self.type_channels + self.agg_size,
                                  self.embeddings)
         self.drop1 = nn.Dropout(0.3)
         self.linear2 = nn.Linear(self.embeddings, self.part3_channels)
 
-        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(2)])
-        self.cnn3 = nn.Conv2d(self.part3_channels, self.part2_channels, kernel_size=3, stride=1, padding=1)
+        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(3)])
+        self.cnn3 = nn.Conv2d(self.part3_channels, self.part2_channels * 4, kernel_size=1, stride=1, padding=0)
+        self.upsampler3 = nn.PixelShuffle(2)
         self.block2 = nn.ModuleList([ResNetBlock(config["block2"]) for _ in range(2)])
-        self.cnn2 = nn.Conv2d(self.part2_channels, self.part1_channels, kernel_size=3, stride=1, padding=1)
+        self.cnn2 = nn.Conv2d(self.part2_channels, self.part1_channels * 4, kernel_size=1, stride=1, padding=0)
+        self.upsampler2 = nn.PixelShuffle(2)
         self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(2)])
         self.cnn1 = nn.Conv2d(self.part1_channels, 3, kernel_size=5, stride=1, padding=2)
 
     def forward(self, x, x_type):
         B = x.shape[0]
-        image_h, image_w = (48, 48) if x_type == 0 else (64, 64)
+        if x_type.item() == 0:
+            image_out_h, image_out_w = self.target_out_h, self.target_out_w
+        else:
+            image_out_h, image_out_w = self.search_out_h, self.search_out_w
 
-        x = x.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, image_h, image_w)
-        pos_embedding = self.target_pos_embedding if x_type == 0 else self.search_pos_embedding
-        pos_embedding = pos_embedding.repeat(B, 1, 1, 1)
+        y = F.relu(self.agg_linear1(x))
+        if x_type.item() == 0:
+            y = F.relu(self.target_agg_linear2(y)).view(B, image_out_h, image_out_w, self.agg_channels)
+        else:
+            y = F.relu(self.search_agg_linear2(y)).view(B, image_out_h, image_out_w, self.agg_channels)
+        y = self.agg_linear3(y)
+        y = rearrange(y, 'b h w c -> b c h w')
+
+        x = x.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, image_out_h, image_out_w)
+        if x_type.item() == 0:
+            pos_embedding = self.target_pos_embedding.repeat(B, 1, 1, 1)
+        else:
+            pos_embedding = self.search_pos_embedding.repeat(B, 1, 1, 1)
         type_embedding = self.type_embedding(x_type).repeat(B, 1)
-        type_embedding = type_embedding.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, image_h, image_w)
+        type_embedding = type_embedding.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, image_out_h, image_out_w)
         
-        x = torch.cat([x, pos_embedding, type_embedding], dim=1)
+        x = torch.cat([x, y, pos_embedding, type_embedding], dim=1)
         x = rearrange(x, 'b c h w -> b h w c')
         x = F.relu(self.linear1(x))
         x = self.drop1(x)
@@ -140,10 +193,10 @@ class Decoder(nn.Module):
         x = rearrange(x, 'b h w c -> b c h w')
         for block in self.block3:
             x = block(x)
-        x = F.relu(self.cnn3(x))
+        x = F.relu(self.upsampler3(self.cnn3(x)))
         for block in self.block2:
             x = block(x)
-        x = F.relu(self.cnn2(x))
+        x = F.relu(self.upsampler2(self.cnn2(x)))
         for block in self.block1:
             x = block(x)
         x = F.sigmoid(self.cnn1(x))
