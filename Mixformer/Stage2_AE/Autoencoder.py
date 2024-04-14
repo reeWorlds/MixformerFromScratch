@@ -162,7 +162,9 @@ class Autoencoder(nn.Module):
         self.decoder = Decoder(config['decoder'])
 
     def forward(self, x, x_type):
+        print(f'x: {x.shape}, x_type: {x_type.shape}')
         x_type = x.to(x.device)
+        print(f'x: {x.shape}, x_type: {x_type.shape}')
         x = self.encoder(x, x_type)
         x = self.decoder(x, x_type)
         return x
