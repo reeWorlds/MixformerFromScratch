@@ -19,10 +19,16 @@ using namespace noise;
 #define search_resolution 64
 #define target_resolution 48
 
-vector <vector <vector <float> > > vec_search(NUM_THREADS);
-vector <vector <vector <int> > > vec_search_type(NUM_THREADS);
-vector <vector <vector <float> > > vec_target(NUM_THREADS);
-vector <vector <vector <int> > > vec_target_type(NUM_THREADS);
+#define max_resolutions 550
+
+vector <vector <vector <float> > > vec_search(NUM_THREADS,
+	vector <vector <float> >(max_resolutions, vector <float>(max_resolutions)));
+vector <vector <vector <int> > > vec_search_type(NUM_THREADS,
+	vector <vector <int> >(max_resolutions, vector <int>(max_resolutions)));
+vector <vector <vector <float> > > vec_target(NUM_THREADS,
+	vector <vector <float> >(max_resolutions, vector <float>(max_resolutions)));
+vector <vector <vector <int> > > vec_target_type(NUM_THREADS,
+	vector <vector <int> >(max_resolutions, vector <int>(max_resolutions)));
 
 vector <cv::Mat> img_search(NUM_THREADS);
 vector <cv::Mat> img_search_res(NUM_THREADS);
@@ -64,9 +70,7 @@ public:
 
 void gen_noise(Config config, int thread_id)
 {
-	vec_search[thread_id] = vector <vector <float> >(config.sn, vector <float>(config.sm));
 	auto& search = vec_search[thread_id];
-	vec_target[thread_id] = vector <vector <float> >(config.tn, vector <float>(config.tm));
 	auto& target = vec_target[thread_id];
 
 	module::Perlin noise;
@@ -99,7 +103,6 @@ void gen_noise(Config config, int thread_id)
 void gen_image_and_outputs(Config config, int thread_id)
 {
 	auto& search = vec_search[thread_id];
-	vec_search_type[thread_id] = vector <vector <int> >(config.sn, vector <int>(config.sm));
 	auto& search_type = vec_search_type[thread_id];
 	img_search[thread_id] = cv::Mat(config.sn, config.sm, CV_8UC3);
 	auto& search_img = img_search[thread_id];
@@ -107,7 +110,6 @@ void gen_image_and_outputs(Config config, int thread_id)
 	auto& search_img_res = img_search_res[thread_id];
 
 	auto& target = vec_target[thread_id];
-	vec_target_type[thread_id] = vector <vector <int> >(config.tn, vector <int>(config.tm));
 	auto& target_type = vec_target_type[thread_id];
 	img_target[thread_id] = cv::Mat(config.tn, config.tm, CV_8UC3);
 	auto& target_img = img_target[thread_id];
