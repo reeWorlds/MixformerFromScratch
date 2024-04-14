@@ -13,10 +13,8 @@ using namespace std;
 using namespace noise;
 
 #define NUM_THREADS 8
-//#define num_patches 21
-#define num_patches 1
-//#define patch_size 10000
-#define patch_size 8
+#define num_patches 21
+#define patch_size 10000
 
 #define search_resolution 64
 #define target_resolution 48
@@ -310,11 +308,13 @@ int main()
 		delete[] all_search;
 		delete[] all_target;
 
+		/*
 		for (int i = 0; i < NUM_THREADS; i++)
 		{
 			cv::imwrite("images/search" + to_string(i) + ".png", img_search_res[i]);
 			cv::imwrite("images/target" + to_string(i) + ".png", img_target_res[i]);
 		}
+		//*/
 	}
 
 	return 0;
