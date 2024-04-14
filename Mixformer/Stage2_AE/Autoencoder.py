@@ -38,11 +38,11 @@ class Encoder(nn.Module):
         self.embeddings = config["embeddings"]
 
         self.cnn1 = nn.Conv2d(3, self.part1_channels, kernel_size=5, stride=1, padding=2)
-        self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(3)])
+        self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(2)])
         self.cnn2 = nn.Conv2d(self.part1_channels, self.part2_channels, kernel_size=3, stride=1, padding=1)
-        self.block2 = nn.ModuleList([ResNetBlock(config["block2"]) for _ in range(3)])
+        self.block2 = nn.ModuleList([ResNetBlock(config["block2"]) for _ in range(2)])
         self.cnn3 = nn.Conv2d(self.part2_channels, self.part3_channels, kernel_size=3, stride=1, padding=1)
-        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(3)])
+        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(2)])
         
         target_weights = torch.randn(self.pos_enc_channels, self.target_h, self.target_w)
         self.register_parameter('target_pos_embedding', nn.Parameter(target_weights))
@@ -114,11 +114,11 @@ class Decoder(nn.Module):
         self.drop1 = nn.Dropout(0.3)
         self.linear2 = nn.Linear(self.embeddings, self.part3_channels)
 
-        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(3)])
+        self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(2)])
         self.cnn3 = nn.Conv2d(self.part3_channels, self.part2_channels, kernel_size=3, stride=1, padding=1)
-        self.block2 = nn.ModuleList([ResNetBlock(config["block2"]) for _ in range(3)])
+        self.block2 = nn.ModuleList([ResNetBlock(config["block2"]) for _ in range(2)])
         self.cnn2 = nn.Conv2d(self.part2_channels, self.part1_channels, kernel_size=3, stride=1, padding=1)
-        self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(3)])
+        self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(2)])
         self.cnn1 = nn.Conv2d(self.part1_channels, 3, kernel_size=5, stride=1, padding=2)
 
     def forward(self, x, x_type):
