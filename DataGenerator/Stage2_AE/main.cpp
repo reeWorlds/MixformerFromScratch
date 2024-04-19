@@ -14,7 +14,7 @@ using namespace noise;
 
 #define NUM_THREADS 8
 #define num_patches 21
-#define patch_size 100000
+#define patch_size 10000
 
 #define big_resolution 64
 #define small_resolution 48
