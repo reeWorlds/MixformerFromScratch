@@ -1,5 +1,5 @@
 def make_ae_config():
-    embed_dim = 128
+    embed_dim = 256
     config = {"embeddings": embed_dim}
     coder_cfg = {"part1_channels": 64, "part2_channels": 80, "part3_channels": 96, "target_h": 48,
                "target_w": 48, "search_h": 64, "search_w": 64, "embeddings": embed_dim,

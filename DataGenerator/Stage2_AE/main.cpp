@@ -14,7 +14,7 @@ using namespace noise;
 
 #define NUM_THREADS 8
 #define num_patches 21
-#define patch_size 10000
+#define patch_size 100000
 
 #define big_resolution 64
 #define small_resolution 48
@@ -95,10 +95,10 @@ void gen_image_and_outputs(Config config, int thread_id)
 	img_small_res[thread_id] = cv::Mat(small_resolution, small_resolution, CV_8UC3);
 	auto& small_img_res = img_small_res[thread_id];
 
-	float water_threshold = 0.25;
-	float sand_threshold = 0.4;
-	float grass_threshold = 0.6;
-	float rock_threshold = 0.8;
+	float water_threshold = 0.3;
+	float sand_threshold = 0.44;
+	float grass_threshold = 0.56;
+	float rock_threshold = 0.7;
 	int base_colors[5][3] =
 	{
 		{ 205, 0, 0 },
@@ -235,11 +235,11 @@ int main()
 		delete[] all_big;
 		delete[] all_small;
 
-		//*
+		/*
 		for (int i = 0; i < NUM_THREADS; i++)
 		{
-			cv::imwrite("images/64x64" + to_string(i) + ".png", img_big_res[i]);
-			cv::imwrite("images/48x48" + to_string(i) + ".png", img_small_res[i]);
+			cv::imwrite("images/64x64_" + to_string(i) + ".png", img_big_res[i]);
+			cv::imwrite("images/48x48_" + to_string(i) + ".png", img_small_res[i]);
 		}
 		//*/
 	}
