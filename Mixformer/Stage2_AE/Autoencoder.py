@@ -54,10 +54,9 @@ class Encoder(nn.Module):
         self.drop3 = nn.Dropout(0.5)
         self.reduce2 = nn.Conv2d(16 * self.reduce_size, self.reduce_size, kernel_size=1, stride=1, padding=0)
         self.bn2 = nn.BatchNorm2d(self.reduce_size)
-        self.linear_target = nn.Linear(self.reduce_size * 9, self.embeddings)
-        self.linear_search = nn.Linear(self.reduce_size * 16, self.embeddings)
+        self.linear = nn.Linear(self.reduce_size * 16, self.embeddings)
 
-    def forward(self, x, x_type):
+    def forward(self, x):
         B = x.shape[0]
 
         x = rearrange(x, 'b h w c -> b c h w')
@@ -79,10 +78,7 @@ class Encoder(nn.Module):
         x = self.drop3(x)
         x = self.bn2(F.relu(self.reduce2(x)))
         x = x.view(B, -1)
-        if x_type.item() == 0:
-            x = self.linear_target(x)
-        else:
-            x = self.linear_search(x)
+        x = self.linear(x)
 
         return x
 
@@ -105,8 +101,7 @@ class Decoder(nn.Module):
         self.part1_channels = config["part1_channels"]
         self.reduce_size = config["reduce_size"]
 
-        self.linear_target = nn.Linear(self.embeddings, self.reduce_size * 9)
-        self.linear_search = nn.Linear(self.embeddings, self.reduce_size * 16)
+        self.linear = nn.Linear(self.embeddings, self.reduce_size * 16)
         self.upscale2 = nn.Conv2d(self.reduce_size, 16 * self.reduce_size, kernel_size=1, stride=1, padding=0)
         self.bn2 = nn.BatchNorm2d(16 * self.reduce_size)
         self.drop3 = nn.Dropout(0.5)
@@ -124,15 +119,11 @@ class Decoder(nn.Module):
         self.block1 = nn.ModuleList([ResNetBlock(config["block1"]) for _ in range(2)])
         self.cnn1 = nn.Conv2d(self.part1_channels, 3, kernel_size=3, stride=1, padding=1)
 
-    def forward(self, x, x_type):
+    def forward(self, x):
         B = x.shape[0]
         
-        if x_type.item() == 0:
-            x = self.linear_target(x)
-            x = x.view(B, self.reduce_size, 3, 3)
-        else:
-            x = self.linear_search(x)
-            x = x.view(B, self.reduce_size, 4, 4)
+        x = self.linear(x)
+        x = x.view(B, self.reduce_size, 4, 4)
         x = self.bn2(F.relu(self.upscale2(x)))
         x = rearrange(x, 'b (c p1 p2) h w -> b c (h p1) (w p2)', p1=4, p2=4)
         x = self.drop3(x)
@@ -163,16 +154,13 @@ class Autoencoder(nn.Module):
         self.encoder = Encoder(config['encoder'])
         self.decoder = Decoder(config['decoder'])
 
-    def forward(self, x, x_type):
-        x_type = x_type.to(x.device)
-        x = self.encoder(x, x_type)
-        x = self.decoder(x, x_type)
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
         return x
     
-    def forward_encoder(self, x, x_type):
-        x_type = x_type.to(x.device)
-        return self.encoder(x, x_type)
+    def forward_encoder(self, x):
+        return self.encoder(x)
     
-    def forward_decoder(self, x, x_type):
-        x_type = x_type.to(x.device)
-        return self.decoder(x, x_type)
+    def forward_decoder(self, x):
+        return self.decoder(x)

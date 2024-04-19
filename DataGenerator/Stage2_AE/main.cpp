@@ -16,33 +16,28 @@ using namespace noise;
 #define num_patches 21
 #define patch_size 10000
 
-#define search_resolution 64
-#define target_resolution 48
+#define big_resolution 64
+#define small_resolution 48
 
-#define max_resolutions 550
+#define max_resolutions 410
 
-vector <vector <vector <float> > > vec_search(NUM_THREADS,
+vector <vector <vector <float> > > vec_image(NUM_THREADS,
 	vector <vector <float> >(max_resolutions, vector <float>(max_resolutions)));
-vector <vector <vector <int> > > vec_search_type(NUM_THREADS,
-	vector <vector <int> >(max_resolutions, vector <int>(max_resolutions)));
-vector <vector <vector <float> > > vec_target(NUM_THREADS,
-	vector <vector <float> >(max_resolutions, vector <float>(max_resolutions)));
-vector <vector <vector <int> > > vec_target_type(NUM_THREADS,
+vector <vector <vector <int> > > vec_image_type(NUM_THREADS,
 	vector <vector <int> >(max_resolutions, vector <int>(max_resolutions)));
 
-vector <cv::Mat> img_search(NUM_THREADS);
-vector <cv::Mat> img_search_res(NUM_THREADS);
-vector <cv::Mat> img_target(NUM_THREADS);
-vector <cv::Mat> img_target_res(NUM_THREADS);
+vector <cv::Mat> img_full(NUM_THREADS);
+vector <cv::Mat> img_big_res(NUM_THREADS);
+vector <cv::Mat> img_small_res(NUM_THREADS);
 
-mt19937 g_rng(3);
+mt19937 g_rng(4);
 uniform_real_distribution<float> g_unif_rng(0.0, 1.0);
 
 class Config
 {
 public:
 
-	int sn, sm, tn, tm;
+	int n, m;
 
 	int seed;
 
@@ -63,15 +58,13 @@ public:
 		persistance = 0.5;
 		lacunarity = 2.0;
 
-		sn = sm = sSize = 300 + g_rng() % 250;
-		tn = tm = tSize = 50 + g_rng() % 150;
+		n = m = tSize = 50 + g_rng() % 350;
 	}
 };
 
 void gen_noise(Config config, int thread_id)
 {
-	auto& search = vec_search[thread_id];
-	auto& target = vec_target[thread_id];
+	auto& image = vec_image[thread_id];
 
 	module::Perlin noise;
 
@@ -81,40 +74,26 @@ void gen_noise(Config config, int thread_id)
 	noise.SetPersistence(config.persistance);
 	noise.SetLacunarity(config.lacunarity);
 
-	for (int i = 0; i < config.sn; i++)
+	for (int i = 0; i < config.n; i++)
 	{
-		for (int j = 0; j < config.sm; j++)
+		for (int j = 0; j < config.m; j++)
 		{
-			search[i][j] = noise.GetValue(i, j, 0) * 0.5 + 0.5;
-			search[i][j] = min(1.0f, max(0.0f, search[i][j]));
-		}
-	}
-
-	for (int i = 0; i < config.tn; i++)
-	{
-		for (int j = 0; j < config.tm; j++)
-		{
-			target[i][j] = noise.GetValue(i, j, 0) * 0.5 + 0.5;
-			target[i][j] = min(1.0f, max(0.0f, target[i][j]));
+			image[i][j] = noise.GetValue(i, j, 0) * 0.5 + 0.5;
+			image[i][j] = min(1.0f, max(0.0f, image[i][j]));
 		}
 	}
 }
 
 void gen_image_and_outputs(Config config, int thread_id)
 {
-	auto& search = vec_search[thread_id];
-	auto& search_type = vec_search_type[thread_id];
-	img_search[thread_id] = cv::Mat(config.sn, config.sm, CV_8UC3);
-	auto& search_img = img_search[thread_id];
-	img_search_res[thread_id] = cv::Mat(search_resolution, search_resolution, CV_8UC3);
-	auto& search_img_res = img_search_res[thread_id];
-
-	auto& target = vec_target[thread_id];
-	auto& target_type = vec_target_type[thread_id];
-	img_target[thread_id] = cv::Mat(config.tn, config.tm, CV_8UC3);
-	auto& target_img = img_target[thread_id];
-	img_target_res[thread_id] = cv::Mat(target_resolution, target_resolution, CV_8UC3);
-	auto& target_img_res = img_target_res[thread_id];
+	auto& image = vec_image[thread_id];
+	auto& image_type = vec_image_type[thread_id];
+	img_full[thread_id] = cv::Mat(config.n, config.m, CV_8UC3);
+	auto& full_img = img_full[thread_id];
+	img_big_res[thread_id] = cv::Mat(big_resolution, big_resolution, CV_8UC3);
+	auto& big_img_res = img_big_res[thread_id];
+	img_small_res[thread_id] = cv::Mat(small_resolution, small_resolution, CV_8UC3);
+	auto& small_img_res = img_small_res[thread_id];
 
 	float water_threshold = 0.25;
 	float sand_threshold = 0.4;
@@ -137,121 +116,69 @@ void gen_image_and_outputs(Config config, int thread_id)
 		{ 30, 30, 0 }
 	};
 
-	for (int i = 0; i < config.sn; i++)
+	for (int i = 0; i < config.n; i++)
 	{
-		for (int j = 0; j < config.sm; j++)
+		for (int j = 0; j < config.m; j++)
 		{
-			if (search[i][j] < water_threshold)
+			if (image[i][j] < water_threshold)
 			{
-				search_type[i][j] = 0;
-				search[i][j] -= 0.0;
-				search[i][j] /= (water_threshold - 0.0);
+				image_type[i][j] = 0;
+				image[i][j] -= 0.0;
+				image[i][j] /= (water_threshold - 0.0);
 			}
-			else if (search[i][j] < sand_threshold)
+			else if (image[i][j] < sand_threshold)
 			{
-				search_type[i][j] = 1;
-				search[i][j] -= water_threshold;
-				search[i][j] /= (sand_threshold - water_threshold);
+				image_type[i][j] = 1;
+				image[i][j] -= water_threshold;
+				image[i][j] /= (sand_threshold - water_threshold);
 			}
-			else if (search[i][j] < grass_threshold)
+			else if (image[i][j] < grass_threshold)
 			{
-				search_type[i][j] = 2;
-				search[i][j] -= sand_threshold;
-				search[i][j] /= (grass_threshold - sand_threshold);
+				image_type[i][j] = 2;
+				image[i][j] -= sand_threshold;
+				image[i][j] /= (grass_threshold - sand_threshold);
 			}
-			else if (search[i][j] < rock_threshold)
+			else if (image[i][j] < rock_threshold)
 			{
-				search_type[i][j] = 3;
-				search[i][j] -= grass_threshold;
-				search[i][j] /= (rock_threshold - grass_threshold);
+				image_type[i][j] = 3;
+				image[i][j] -= grass_threshold;
+				image[i][j] /= (rock_threshold - grass_threshold);
 			}
 			else
 			{
-				search_type[i][j] = 4;
-				search[i][j] -= rock_threshold;
-				search[i][j] /= (1.0 - rock_threshold);
+				image_type[i][j] = 4;
+				image[i][j] -= rock_threshold;
+				image[i][j] /= (1.0 - rock_threshold);
 			}
 		}
 	}
-	for (int i = 0; i < config.sn; i++)
+	for (int i = 0; i < config.n; i++)
 	{
-		for (int j = 0; j < config.sm; j++)
+		for (int j = 0; j < config.m; j++)
 		{
-			int my_type = search_type[i][j];
+			int my_type = image_type[i][j];
 			uchar cols[3] =
 			{
-				cols[0] = base_colors[my_type][0] + shift_colors[my_type][0] * search[i][j],
-				cols[1] = base_colors[my_type][1] + shift_colors[my_type][1] * search[i][j],
-				cols[2] = base_colors[my_type][2] + shift_colors[my_type][2] * search[i][j]
+				cols[0] = base_colors[my_type][0] + shift_colors[my_type][0] * image[i][j],
+				cols[1] = base_colors[my_type][1] + shift_colors[my_type][1] * image[i][j],
+				cols[2] = base_colors[my_type][2] + shift_colors[my_type][2] * image[i][j]
 			};
-			search_img.at<cv::Vec3b>(i, j) = cv::Vec3b(cols[0], cols[1], cols[2]);
+			full_img.at<cv::Vec3b>(i, j) = cv::Vec3b(cols[0], cols[1], cols[2]);
 		}
 	}
-	auto size = cv::Size(search_resolution, search_resolution);
-	cv::resize(search_img, search_img_res, size, 0, 0, cv::INTER_LINEAR);
-
-	for (int i = 0; i < config.tn; i++)
-	{
-		for (int j = 0; j < config.tm; j++)
-		{
-			if (target[i][j] < water_threshold)
-			{
-				target_type[i][j] = 0;
-				target[i][j] -= 0.0;
-				target[i][j] /= (water_threshold - 0.0);
-			}
-			else if (target[i][j] < sand_threshold)
-			{
-				target_type[i][j] = 1;
-				target[i][j] -= water_threshold;
-				target[i][j] /= (sand_threshold - water_threshold);
-			}
-			else if (target[i][j] < grass_threshold)
-			{
-				target_type[i][j] = 2;
-				target[i][j] -= sand_threshold;
-				target[i][j] /= (grass_threshold - sand_threshold);
-			}
-			else if (target[i][j] < rock_threshold)
-			{
-				target_type[i][j] = 3;
-				target[i][j] -= grass_threshold;
-				target[i][j] /= (rock_threshold - grass_threshold);
-			}
-			else
-			{
-				target_type[i][j] = 4;
-				target[i][j] -= rock_threshold;
-				target[i][j] /= (1.0 - rock_threshold);
-			}
-		}
-	}
-	for (int i = 0; i < config.tn; i++)
-	{
-		for (int j = 0; j < config.tm; j++)
-		{
-			int my_type = target_type[i][j];
-			uchar cols[3] =
-			{
-				cols[0] = base_colors[my_type][0] + shift_colors[my_type][0] * target[i][j],
-				cols[1] = base_colors[my_type][1] + shift_colors[my_type][1] * target[i][j],
-				cols[2] = base_colors[my_type][2] + shift_colors[my_type][2] * target[i][j]
-			};
-			target_img.at<cv::Vec3b>(i, j) = cv::Vec3b(cols[0], cols[1], cols[2]);
-		}
-	}
-	size = cv::Size(target_resolution, target_resolution);
-	cv::resize(target_img, target_img_res, size, 0, 0, cv::INTER_LINEAR);
+	auto size = cv::Size(big_resolution, big_resolution);
+	cv::resize(full_img, big_img_res, size, 0, 0, cv::INTER_LINEAR);
+	size = cv::Size(small_resolution, small_resolution);
+	cv::resize(full_img, small_img_res, size, 0, 0, cv::INTER_LINEAR);
 }
-
 
 
 int main()
 {
 	for (int packet_i = 0; packet_i < num_patches; packet_i++)
 	{
-		float* all_search = new float[search_resolution * search_resolution * 3 * patch_size];
-		float* all_target = new float[target_resolution * target_resolution * 3 * patch_size];
+		float* all_big = new float[big_resolution * big_resolution * 3 * patch_size];
+		float* all_small = new float[small_resolution * small_resolution * 3 * patch_size];
 
 		vector <Config> configs;
 		for (int i = 0; i < patch_size; i++) { configs.push_back(Config(packet_i * num_patches + i)); }
@@ -265,27 +192,27 @@ int main()
 			gen_noise(configs[i], thread_id);
 			gen_image_and_outputs(configs[i], thread_id);
 
-			float* search_p = all_search + search_resolution * search_resolution * 3 * i;
-			for (int ii = 0; ii < search_resolution; ii++)
+			float* big_p = all_big + big_resolution * big_resolution * 3 * i;
+			for (int ii = 0; ii < big_resolution; ii++)
 			{
-				for (int jj = 0; jj < search_resolution; jj++)
+				for (int jj = 0; jj < big_resolution; jj++)
 				{
-					search_p[0] = img_search_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
-					search_p[1] = img_search_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
-					search_p[2] = img_search_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
-					search_p += 3;
+					big_p[0] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
+					big_p[1] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
+					big_p[2] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
+					big_p += 3;
 				}
 			}
 
-			float* target_p = all_target + target_resolution * target_resolution * 3 * i;
-			for (int ii = 0; ii < target_resolution; ii++)
+			float* small_p = all_small + small_resolution * small_resolution * 3 * i;
+			for (int ii = 0; ii < small_resolution; ii++)
 			{
-				for (int jj = 0; jj < target_resolution; jj++)
+				for (int jj = 0; jj < small_resolution; jj++)
 				{
-					target_p[0] = img_target_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
-					target_p[1] = img_target_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
-					target_p[2] = img_target_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
-					target_p += 3;
+					small_p[0] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
+					small_p[1] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
+					small_p[2] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
+					small_p += 3;
 				}
 			}
 
@@ -297,24 +224,22 @@ int main()
 			}
 		}
 
-		ofstream file_search("data/patch" + to_string(packet_i) + "_search.bin", ios::binary);
-		file_search.write((char*)all_search, search_resolution * search_resolution * 3 * patch_size
-			* sizeof(float));
+		ofstream file_search("data/patch" + to_string(packet_i) + "_64x64.bin", ios::binary);
+		file_search.write((char*)all_big, big_resolution * big_resolution * 3 * patch_size * sizeof(float));
 		file_search.close();
 
-		ofstream file_target("data/patch" + to_string(packet_i) + "_target.bin", ios::binary);
-		file_target.write((char*)all_target, target_resolution * target_resolution * 3 * patch_size
-			* sizeof(float));
+		ofstream file_target("data/patch" + to_string(packet_i) + "_48x48.bin", ios::binary);
+		file_target.write((char*)all_small, small_resolution * small_resolution * 3 * patch_size * sizeof(float));
 		file_target.close();
 
-		delete[] all_search;
-		delete[] all_target;
+		delete[] all_big;
+		delete[] all_small;
 
-		/*
+		//*
 		for (int i = 0; i < NUM_THREADS; i++)
 		{
-			cv::imwrite("images/search" + to_string(i) + ".png", img_search_res[i]);
-			cv::imwrite("images/target" + to_string(i) + ".png", img_target_res[i]);
+			cv::imwrite("images/64x64" + to_string(i) + ".png", img_big_res[i]);
+			cv::imwrite("images/48x48" + to_string(i) + ".png", img_small_res[i]);
 		}
 		//*/
 	}

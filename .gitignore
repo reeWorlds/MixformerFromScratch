@@ -402,3 +402,6 @@ FodyWeavers.xsd
 *.dll
 *.ckpt
 *.egg-info/
+
+# Extra
+**/test.py
