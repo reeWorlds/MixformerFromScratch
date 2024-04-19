@@ -49,12 +49,12 @@ class Encoder(nn.Module):
         self.block3 = nn.ModuleList([ResNetBlock(config["block3"]) for _ in range(3)])
         self.drop2 = nn.Dropout(0.5)
         
-        self.reduce1 = nn.Conv2d(self.part3_channels, self.reduce_size, kernel_size=1, stride=1, padding=0)
+        self.reduce1 = nn.Conv2d(self.part3_channels, self.reduce_size, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm2d(self.reduce_size)
         self.drop3 = nn.Dropout(0.5)
         self.reduce2 = nn.Conv2d(16 * self.reduce_size, self.reduce_size, kernel_size=1, stride=1, padding=0)
         self.bn2 = nn.BatchNorm2d(self.reduce_size)
-        self.linear = nn.Linear(self.reduce_size * 16, self.embeddings)
+        self.linear = nn.Linear(self.reduce_size, self.embeddings // 16)
 
     def forward(self, x):
         B = x.shape[0]
@@ -74,11 +74,12 @@ class Encoder(nn.Module):
         x = self.drop2(x)
 
         x = self.bn1(F.relu(self.reduce1(x)))
-        x = rearrange(x, 'b c (h p1) (w p2) -> b (c p1 p2) h w', p1=4, p2=4)
+        x = rearrange(x, 'b c (h p1) (w p2) -> b (c p1 p2) h w', p1=4, p2=4).contiguous()
         x = self.drop3(x)
         x = self.bn2(F.relu(self.reduce2(x)))
-        x = x.view(B, -1)
+        x = rearrange(x, "b c h w -> b h w c").contiguous()
         x = self.linear(x)
+        x = x.view(B, self.embeddings)
 
         return x
 
@@ -101,7 +102,7 @@ class Decoder(nn.Module):
         self.part1_channels = config["part1_channels"]
         self.reduce_size = config["reduce_size"]
 
-        self.linear = nn.Linear(self.embeddings, self.reduce_size * 16)
+        self.linear = nn.Linear(self.embeddings // 16, self.reduce_size)
         self.upscale2 = nn.Conv2d(self.reduce_size, 16 * self.reduce_size, kernel_size=1, stride=1, padding=0)
         self.bn2 = nn.BatchNorm2d(16 * self.reduce_size)
         self.drop3 = nn.Dropout(0.5)
@@ -122,8 +123,9 @@ class Decoder(nn.Module):
     def forward(self, x):
         B = x.shape[0]
         
+        x = x.view(B, 4, 4, self.embeddings // 16)
         x = self.linear(x)
-        x = x.view(B, self.reduce_size, 4, 4)
+        x = rearrange(x, "b h w c -> b c h w")
         x = self.bn2(F.relu(self.upscale2(x)))
         x = rearrange(x, 'b (c p1 p2) h w -> b c (h p1) (w p2)', p1=4, p2=4)
         x = self.drop3(x)
