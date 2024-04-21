@@ -297,8 +297,6 @@ class MaskHead(nn.Module):
         self.conv3_2 = nn.Conv2d(self.channels // 4, 5, 1, padding=0)
 
     def forward(self, x):
-        print(x.shape)
-        print(self.channels)
         # (B, C, _H, _W)
         x = rearrange(x, 'b h w c -> b c h w').contiguous()
         # (B, C, 2 * _H, 2 * _W)
