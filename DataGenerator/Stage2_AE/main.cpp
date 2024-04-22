@@ -46,8 +46,7 @@ public:
 	float persistance;
 	float lacunarity;
 
-	int sSize;
-	int tSize;
+	int imSize;
 
 	Config(int id)
 	{
@@ -58,7 +57,7 @@ public:
 		persistance = 0.5;
 		lacunarity = 2.0;
 
-		n = m = tSize = 50 + g_rng() % 350;
+		n = m = imSize = 50 + g_rng() % 350;
 	}
 };
 
@@ -177,8 +176,9 @@ int main()
 {
 	for (int packet_i = 0; packet_i < num_patches; packet_i++)
 	{
-		float* all_big = new float[big_resolution * big_resolution * 3 * patch_size];
-		float* all_small = new float[small_resolution * small_resolution * 3 * patch_size];
+		//float* all_big = new float[big_resolution * big_resolution * 3 * patch_size];
+		//float* all_small = new float[small_resolution * small_resolution * 3 * patch_size];
+		int *all_labels = new int[patch_size];
 
 		vector <Config> configs;
 		for (int i = 0; i < patch_size; i++) { configs.push_back(Config(packet_i * num_patches + i)); }
@@ -189,32 +189,33 @@ int main()
 		for (int i = 0; i < patch_size; i++)
 		{
 			int thread_id = omp_get_thread_num();
-			gen_noise(configs[i], thread_id);
-			gen_image_and_outputs(configs[i], thread_id);
-
-			float* big_p = all_big + big_resolution * big_resolution * 3 * i;
-			for (int ii = 0; ii < big_resolution; ii++)
-			{
-				for (int jj = 0; jj < big_resolution; jj++)
-				{
-					big_p[0] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
-					big_p[1] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
-					big_p[2] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
-					big_p += 3;
-				}
-			}
-
-			float* small_p = all_small + small_resolution * small_resolution * 3 * i;
-			for (int ii = 0; ii < small_resolution; ii++)
-			{
-				for (int jj = 0; jj < small_resolution; jj++)
-				{
-					small_p[0] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
-					small_p[1] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
-					small_p[2] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
-					small_p += 3;
-				}
-			}
+			all_labels[i] = (configs[i].imSize - 50) / 25;
+			//gen_noise(configs[i], thread_id);
+			//gen_image_and_outputs(configs[i], thread_id);
+			//
+			//float* big_p = all_big + big_resolution * big_resolution * 3 * i;
+			//for (int ii = 0; ii < big_resolution; ii++)
+			//{
+			//	for (int jj = 0; jj < big_resolution; jj++)
+			//	{
+			//		big_p[0] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
+			//		big_p[1] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
+			//		big_p[2] = img_big_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
+			//		big_p += 3;
+			//	}
+			//}
+			//
+			//float* small_p = all_small + small_resolution * small_resolution * 3 * i;
+			//for (int ii = 0; ii < small_resolution; ii++)
+			//{
+			//	for (int jj = 0; jj < small_resolution; jj++)
+			//	{
+			//		small_p[0] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[2] / 255.0;
+			//		small_p[1] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[1] / 255.0;
+			//		small_p[2] = img_small_res[thread_id].at<cv::Vec3b>(ii, jj)[0] / 255.0;
+			//		small_p += 3;
+			//	}
+			//}
 
 			if (thread_id == 0 && i % 50 == 0)
 			{
@@ -224,16 +225,21 @@ int main()
 			}
 		}
 
-		ofstream file_search("data/patch" + to_string(packet_i) + "_64x64.bin", ios::binary);
-		file_search.write((char*)all_big, big_resolution * big_resolution * 3 * patch_size * sizeof(float));
-		file_search.close();
-
-		ofstream file_target("data/patch" + to_string(packet_i) + "_48x48.bin", ios::binary);
-		file_target.write((char*)all_small, small_resolution * small_resolution * 3 * patch_size * sizeof(float));
-		file_target.close();
-
-		delete[] all_big;
-		delete[] all_small;
+		//ofstream file_search("data/patch" + to_string(packet_i) + "_64x64.bin", ios::binary);
+		//file_search.write((char*)all_big, big_resolution * big_resolution * 3 * patch_size * sizeof(float));
+		//file_search.close();
+		//
+		//ofstream file_target("data/patch" + to_string(packet_i) + "_48x48.bin", ios::binary);
+		//file_target.write((char*)all_small, small_resolution * small_resolution * 3 * patch_size * sizeof(float));
+		//file_target.close();
+		// 
+		ofstream file_labels("data/patch" + to_string(packet_i) + "_labels.bin", ios::binary);
+		file_labels.write((char*)all_labels, patch_size * sizeof(int));
+		file_labels.close();
+		//
+		//delete[] all_big;
+		//delete[] all_small;
+		delete[] all_labels;
 
 		/*
 		for (int i = 0; i < NUM_THREADS; i++)

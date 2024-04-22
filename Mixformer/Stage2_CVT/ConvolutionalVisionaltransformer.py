@@ -319,7 +319,7 @@ class ClassHead(nn.Module):
     Module appended to Transformer backbone to predict the class of the image.
 
     Input shape: (B, D)
-    Output shape: (B, 20)
+    Output shape: (B, 14)
     """
     def __init__(self, config):
         super(ClassHead, self).__init__()
@@ -328,15 +328,15 @@ class ClassHead(nn.Module):
         self.inner_dim = config['inner_dim']
 
         self.linear1 = nn.Linear(self.embd_d, self.inner_dim)
-        self.linear2 = nn.Linear(self.inner_dim, 20)
+        self.linear2 = nn.Linear(self.inner_dim, 14)
 
     def forward(self, x):
         # (B, D)
         x = F.relu(self.linear1(x))
-        # (B, 20)
+        # (B, 14)
         x = F.softmax(self.linear2(x), dim=-1)
 
-        # (B, 20)
+        # (B, 14)
         return x
 
 
@@ -345,7 +345,7 @@ class Transformer(nn.Module):
     Kind of Transmormer model.
 
     Input shape: (B, H, W, 3)
-    Output shape: (B, H, W, 5), (B, 20)
+    Output shape: (B, H, W, 5), (B, 14)
     """
     def __init__(self, config):
         super(Transformer, self).__init__()
@@ -381,8 +381,8 @@ class Transformer(nn.Module):
 
         # (B, H, W, 5)
         res_mask = self.mask_head(image)
-        # (B, 20)
+        # (B, 14)
         res_class = self.class_head(cls)
 
-        # (B, H, W, 5), (B, 20)
+        # (B, H, W, 5), (B, 14)
         return res_mask, res_class
