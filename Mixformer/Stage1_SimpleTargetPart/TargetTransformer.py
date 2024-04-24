@@ -196,7 +196,7 @@ class MultiHeadAttention(nn.Module):
         x = x + self.drop1(self.ff_proj(self.norm2(x)))
 
         # (B, N, D)
-        return target_attn
+        return x
 
 
 class MixedAttentionModule(nn.Module):
@@ -316,13 +316,13 @@ class ClassesHead(nn.Module):
         # (B, C, H, W)
         x = rearrange(x, 'b (h w) c -> b c h w', h=self.target_h, w=self.target_w).contiguous()
         # (B, C/2, H, W)
-        x = F.relu(self.batchnorm1(self.conv1(x)))
+        x = F.selu(self.batchnorm1(self.conv1(x)))
         # (B, C/2)
         x = self.global_average_pool(x).squeeze(-1).squeeze(-1)
         # x: (B, C/2)
         assert x.shape == (B, self.channels // 2)
         # (B, LS)
-        x = F.relu(self.linear1(x))
+        x = F.selu(self.linear1(x))
         # (B, 5)
         x = self.linear2(x)
         # x: (B, 5)
