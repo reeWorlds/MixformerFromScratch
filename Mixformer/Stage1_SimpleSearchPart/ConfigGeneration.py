@@ -56,8 +56,8 @@ def make_mixformer_config(size_type='medium'):
         embds, n_heads, num_mams = [64, 96], [3, 4], [4, 8]
     else:
         raise ValueError(f'Invalid size type {size_type}')
-    config = {'search_inp_h': 64, 'search_inp_w': 64, 'num_stages': num_stages}
-    config['stage_0'] = make_stage_config(3, embds[0], 64, 64, num_mams[0], 5, 2, 2, 3, 1, 1, 1, 2,
+    config = {'proj_channels': embds[0], 'search_inp_h': 64, 'search_inp_w': 64, 'num_stages': num_stages}
+    config['stage_0'] = make_stage_config(embds[0], embds[0], 64, 64, num_mams[0], 5, 2, 2, 3, 1, 1, 1, 2,
                                           n_heads[0], 3)
     config['stage_1'] = make_stage_config(embds[0], embds[1], 32, 32, num_mams[1], 3, 1, 2, 3, 1, 1, 1, 2,
                                           n_heads[1], 3)

@@ -214,7 +214,7 @@ class MultiHeadAttention(nn.Module):
         x = x + self.drop1(self.ff_proj(self.norm2(x)))
 
         # (B, N, D)
-        return search_attn
+        return x
 
 
 class MixedAttentionModule(nn.Module):
@@ -331,7 +331,6 @@ class MaskHead(nn.Module):
         self.search_out_h = config['search_out_h']
         self.search_out_w = config['search_out_w']
 
-        self.class_type_embeding = nn.Embedding(5, self.channels)
         self.deconv1 = self.make_deconvolution_block(self.channels)
         self.deconv2 = self.make_deconvolution_block(self.channels // 2)
         self.conv3 = nn.Conv2d(self.channels // 4, self.channels // 4, 3, 1, 1)
@@ -343,19 +342,13 @@ class MaskHead(nn.Module):
             nn.PixelShuffle(2),
             nn.Conv2d(channels // 2, channels // 2, 3, 1, 1),
             nn.BatchNorm2d(channels // 2),
-            nn.ReLU(inplace=True)
+            nn.SELU(inplace=True)
         )
 
-    def forward(self, x, class_index):
+    def forward(self, x):
         B = x.shape[0]
-        input_size = self.search_inp_h * self.search_inp_w
         # x: (B, H * W, C)
         assert x.shape == (B, self.search_inp_h * self.search_inp_w, self.channels)
-
-        # (B, H * W, C)
-        cls = self.class_type_embeding(class_index).unsqueeze(1).expand(-1, input_size, -1)
-        # (B, H * W, C)
-        x = x + cls
 
         # (B, C, H, W)
         x = rearrange(x, 'b (h w) c -> b c h w', h=self.search_inp_h, w=self.search_inp_w).contiguous()
@@ -364,7 +357,7 @@ class MaskHead(nn.Module):
         # (B, C/4, 4*H, 4*W)
         x = self.deconv2(x)
         # (B, C/4, 4*H, 4*W)
-        x = F.relu(self.conv3(x))
+        x = F.selu(self.conv3(x))
         # (B, 4*h, 4*W, C/4)
         x = rearrange(x, 'b c h w -> b h w c').contiguous()
         # (B, 4*H, 4*W, 1)
@@ -389,6 +382,7 @@ class MixFormer(nn.Module):
     def __init__(self, config, base_model=None):
         super(MixFormer, self).__init__()
         
+        self.proj_channels = config['proj_channels']
         self.search_inp_h = config['search_inp_h']
         self.search_inp_w = config['search_inp_w']
         self.search_out_h = config['search_out_h']
@@ -396,6 +390,8 @@ class MixFormer(nn.Module):
         self.out_embed_dim = config['out_embed_dim']
         self.num_stages = config['num_stages']
         
+        self.proj_cnn = nn.Conv2d(3, self.proj_channels, 3, 1, 1)
+        self.class_type_embeding = nn.Embedding(5, self.proj_channels)
         if base_model is None:
             self.stages = nn.ModuleList([Stage(config[f'stage_{i}']) for i in range(self.num_stages)])
         else:
@@ -410,8 +406,17 @@ class MixFormer(nn.Module):
         # search: (B, Hs, Ws, 3)
         assert search.shape == (B, self.search_inp_h, self.search_inp_w, 3)
 
-        # (B, Hs * Ws, C)
-        x = search.view(B, search_inp_size, 3)
+        # (B, 3, Hs, Ws)
+        x = rearrange(search, 'b h w c -> b c h w').contiguous()
+        # B, _C, Hs, Ws)
+        search = self.proj_cnn(search)
+        # (B, Hs * Ws, _C)
+        x = rearrange(search, 'b c h w -> b (h w) c').contiguous()
+
+        # (B, Hs * Ws, _C)
+        cls = self.class_type_embeding(class_index).unsqueeze(1).expand(-1, search_inp_size, -1)
+        # (B, Hs * Ws, _C)
+        x = x + cls
 
         for stage in self.stages:
             # (B, _Hs * _Ws, D)
@@ -421,7 +426,7 @@ class MixFormer(nn.Module):
         assert x.shape == (B, search_out_size, self.out_embed_dim)
 
         # (B, _Hs, _Ws)
-        output = self.mask_head(x, class_index)
+        output = self.mask_head(x)
         # output: (B, Hs, Ws)
         assert output.shape == (B, self.search_inp_h, self.search_inp_w)
 
