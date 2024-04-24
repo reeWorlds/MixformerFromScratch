@@ -409,9 +409,9 @@ class MixFormer(nn.Module):
         # (B, 3, Hs, Ws)
         x = rearrange(search, 'b h w c -> b c h w').contiguous()
         # B, _C, Hs, Ws)
-        search = self.proj_cnn(search)
+        x = self.proj_cnn(x)
         # (B, Hs * Ws, _C)
-        x = rearrange(search, 'b c h w -> b (h w) c').contiguous()
+        x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
 
         # (B, Hs * Ws, _C)
         cls = self.class_type_embeding(class_index).unsqueeze(1).expand(-1, search_inp_size, -1)
