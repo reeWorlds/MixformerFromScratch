@@ -28,11 +28,11 @@ class StagePreprocessor(nn.Module):
         self.patch_stride = config['patch_stride']
         self.patch_padding = config['patch_padding']
 
+        self.proj = nn.Conv2d(self.channels, self.embed_dim, self.patch_size, self.patch_stride,
+                              self.patch_padding)
         if base_model is None:
-            self.proj = nn.Conv2d(self.channels, self.embed_dim, self.patch_size, self.patch_stride, self.patch_padding)
             self.norm = nn.LayerNorm(self.embed_dim)
         else:
-            self.proj = copy.deepcopy(base_model.proj)
             self.norm = copy.deepcopy(base_model.norm)
 
     def forward(self, x):
@@ -435,7 +435,7 @@ class MixFormer(nn.Module):
 
     def set_base_requires_grad(self, requires_grad=False):
         for stage in self.stages:
-            self._set_requires_grad(stage.preprocessor.proj, requires_grad)
+            #self._set_requires_grad(stage.preprocessor.proj, requires_grad)
             self._set_requires_grad(stage.preprocessor.norm, requires_grad)
             for mam_block in stage.mam_blocks:
                 self._set_requires_grad(mam_block.depthwise_qkv.norm1, requires_grad)
