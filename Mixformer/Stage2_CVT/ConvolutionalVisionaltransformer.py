@@ -215,7 +215,7 @@ class MultiHeadAttention(nn.Module):
         x = x + self.drop1(self.ff_proj(self.norm2(x)))
 
         # (B, N, D)
-        return attn
+        return x
 
 
 class MixedAttentionModule(nn.Module):
@@ -232,15 +232,12 @@ class MixedAttentionModule(nn.Module):
 
         self.depthwise_qkv = DepthWiseQueryKeyValue(config['depthwise_qkv'])
         self.attention = MultiHeadAttention(config['attention'])
-        self.final_proj = nn.Linear(self.embd_d, self.embd_d)
 
     def forward(self, x):
         # (B, H, [1 +] _N, D/H), (B, H, [1 +] __N, D/H), (B, H, [1 +] __N, D/H)
         image_q, image_k, imageh_v = self.depthwise_qkv(x)
         # (B, N, D)
         x = self.attention(x, image_q, image_k, imageh_v)
-        # (B, N, D)
-        x = x + self.final_proj(x)
 
         # (B, N, D)
         return x
@@ -300,11 +297,11 @@ class MaskHead(nn.Module):
         # (B, C, _H, _W)
         x = rearrange(x, 'b h w c -> b c h w').contiguous()
         # (B, C, 2 * _H, 2 * _W)
-        x = self.conv1_3(F.relu(self.conv1_2(F.relu(self.conv1_1(x)))))
+        x = self.conv1_3(F.selu(self.conv1_2(F.selu(self.conv1_1(x)))))
         # (B, C, 4 * _H, 4 * _W)
-        x = self.conv2_3(F.relu(self.conv2_2(F.relu(self.conv2_1(x)))))
+        x = self.conv2_3(F.selu(self.conv2_2(F.selu(self.conv2_1(x)))))
         # (B, 5, 4 * _H, 4 * _W)
-        x = self.conv3_2(F.relu(self.conv3_1(x)))
+        x = self.conv3_2(F.selu(self.conv3_1(x)))
         # (B, 4 * _H, 4 * _W, 5)
         x = rearrange(x, 'b c h w -> b h w c').contiguous()
         # (B, H, W, 5)
@@ -332,7 +329,7 @@ class ClassHead(nn.Module):
 
     def forward(self, x):
         # (B, D)
-        x = F.relu(self.linear1(x))
+        x = F.selu(self.linear1(x))
         # (B, 14)
         x = F.softmax(self.linear2(x), dim=-1)
 
@@ -362,7 +359,7 @@ class Transformer(nn.Module):
         # (B, 3, H, W)
         x = rearrange(x, 'b h w c -> b c h w').contiguous()
         # (B, C, H, W)
-        x = F.relu(self.init_projection(x))
+        x = F.selu(self.init_projection(x))
         # (B, H * W, C)
         x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
 

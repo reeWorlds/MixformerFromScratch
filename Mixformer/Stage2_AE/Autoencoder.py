@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
@@ -17,9 +16,9 @@ class ResNetBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(self.channels)
 
     def forward(self, x):
-        y = F.relu(self.bn1(self.conv1(x)))
+        y = F.selu(self.bn1(self.conv1(x)))
         y = self.bn2(self.conv2(y))
-        return F.relu(x + y)
+        return F.selu(x + y)
 
 
 class Encoder(nn.Module):
@@ -61,22 +60,22 @@ class Encoder(nn.Module):
 
         x = rearrange(x, 'b h w c -> b c h w')
 
-        x = F.relu(self.cnn1(x))
+        x = F.selu(self.cnn1(x))
         for block in self.block1:
             x = block(x)
-        x = F.relu(self.cnn2(x))
+        x = F.selu(self.cnn2(x))
         for block in self.block2:
             x = block(x)
         x = self.drop1(x)
-        x = F.relu(self.cnn3(x))
+        x = F.selu(self.cnn3(x))
         for block in self.block3:
             x = block(x)
         x = self.drop2(x)
 
-        x = self.bn1(F.relu(self.reduce1(x)))
+        x = self.bn1(F.selu(self.reduce1(x)))
         x = rearrange(x, 'b c (h p1) (w p2) -> b (c p1 p2) h w', p1=4, p2=4).contiguous()
         x = self.drop3(x)
-        x = self.bn2(F.relu(self.reduce2(x)))
+        x = self.bn2(F.selu(self.reduce2(x)))
         x = rearrange(x, "b c h w -> b h w c").contiguous()
         x = self.linear(x)
         x = x.view(B, self.embeddings)
@@ -126,19 +125,19 @@ class Decoder(nn.Module):
         x = x.view(B, 4, 4, self.embeddings // 16)
         x = self.linear(x)
         x = rearrange(x, "b h w c -> b c h w")
-        x = self.bn2(F.relu(self.upscale2(x)))
+        x = self.bn2(F.selu(self.upscale2(x)))
         x = rearrange(x, 'b (c p1 p2) h w -> b c (h p1) (w p2)', p1=4, p2=4)
         x = self.drop3(x)
-        x = self.bn1(F.relu(self.upscale1(x)))
+        x = self.bn1(F.selu(self.upscale1(x)))
         x = self.drop2(x)
 
         for block in self.block3:
             x = block(x)
-        x = F.relu(self.upsampler3(self.cnn3(x)))
+        x = F.selu(self.upsampler3(self.cnn3(x)))
         x = self.drop1(x)
         for block in self.block2:
             x = block(x)
-        x = F.relu(self.upsampler2(self.cnn2(x)))
+        x = F.selu(self.upsampler2(self.cnn2(x)))
         for block in self.block1:
             x = block(x)
         x = self.cnn1(x)
