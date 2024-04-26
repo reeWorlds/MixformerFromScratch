@@ -411,7 +411,9 @@ int main()
 		file_info.close();
 
 		delete[] all_big;
+		delete[] all_b_stats;
 		delete[] all_small;
+		delete[] all_s_stats;
 		delete[] all_info;
 
 		/*
