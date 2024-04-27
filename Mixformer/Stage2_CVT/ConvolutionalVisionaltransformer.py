@@ -278,16 +278,25 @@ class StatsHead(nn.Module):
 
         self.channels = config['channels']
 
-        self.linear1 = nn.Linear(self.channels, self.channels)
-        self.linear2 = nn.Linear(self.channels, 5)
+        self.linear1 = nn.Linear(4 * self.channels, self.channels)
+        self.linear2 = nn.Linear(self.channels, self.channels)
+        self.linear3 = nn.Linear(self.channels, 5)
 
     def forward(self, x):
-        # (B, H, W, C)
-        x = F.selu(self.linear1(x))
-        # (B, H, W, 5)
-        x = self.linear2(x)
+        HW = x.shape[1]
 
-        # (B, H, W, 5)
+        # (B, H/2, W/2, 4*C)
+        x = rearrange(x, 'b (h1 h2) (w1 w2) c -> b h1 w1 (h2 w2 c)',
+                      h1=HW//2, h2=2, w1=HW//2, w2=2).contiguous()
+
+        # (B, H/2, W/2, C)
+        x = F.selu(self.linear1(x))
+        # (B, H/2, W/2, C)
+        x = F.selu(self.linear2(x))
+        # (B, H/2, W/2, 5)
+        x = self.linear3(x)
+
+        # (B, H/2, W/2, 5)
         return x
 
 
