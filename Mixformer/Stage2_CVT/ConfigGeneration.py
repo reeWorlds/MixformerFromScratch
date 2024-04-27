@@ -35,10 +35,12 @@ def make_class_head_config(d, inner_d):
     config = {'embd_d': d, 'inner_dim': inner_d}
     return config
 
-def make_transformer_config(size_type='large'):
+def make_transformer_config(size_type='medium'):
     num_stages = 2
     lst_stg = num_stages - 1
-    if size_type == 'medium':
+    if size_type == 'small':
+        embds, n_heads, num_mams = [32, 48], [2, 3], [2, 4]
+    elif size_type == 'medium':
         embds, n_heads, num_mams = [48, 72], [2, 3], [3, 6]
     elif size_type == 'large':
         embds, n_heads, num_mams = [72, 108], [2, 3], [4, 8]

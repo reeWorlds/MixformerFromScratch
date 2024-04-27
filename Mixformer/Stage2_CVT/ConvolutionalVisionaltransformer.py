@@ -30,8 +30,8 @@ class StagePreprocessor(nn.Module):
         self.register_buffer('search_pos_embd', search_pos_embd)
         target_pos_embd = self.get_pos_embd(self.target_hw * self.target_hw, self.in_c, 2000.0)
         self.register_buffer('target_pos_embd', target_pos_embd)
-        self.search_target_embd = nn.Embedding(2, self.in_c)
-        self.search_target_embd.weight.data *= 0.2
+        self.register_parameter('search_embd', nn.Parameter(torch.randn(1, 1, self.in_c) * 0.2))
+        self.register_parameter('target_embd', nn.Parameter(torch.randn(1, 1, self.in_c) * 0.2))
         self.proj = nn.Conv2d(self.in_c, self.out_c, self.patch_size, self.patch_stride, self.patch_padding)
         if self.use_cls:
             self.register_parameter('cls_token', nn.Parameter(torch.randn(1, 1, self.out_c)))
@@ -63,17 +63,13 @@ class StagePreprocessor(nn.Module):
         if HW == self.search_hw:
             # (B, H * W, C)
             x = x + self.search_pos_embd.view(1, -1, self.in_c)
-            # (1)
-            ind = torch.zeros(1, dtype=torch.int32).to(x.device)
             # (B, H * W, C)
-            x = x + self.search_target_embd(ind).view(1, 1, self.in_c)
+            x = x + self.search_embd
         else:
             # (B, H * W, C)
             x = x + self.target_pos_embd.view(1, -1, self.in_c)
-            # (1)
-            ind = torch.ones(1, dtype=torch.int32).to(x.device)
             # (B, H * W, C)
-            x = x + self.search_target_embd(ind).view(1, 1, self.in_c)
+            x = x + self.target_embd
 
         # (B, C, H, W)
         x = rearrange(x, 'b (h w) c -> b c h w', h=HW, w=HW).contiguous()
@@ -270,71 +266,58 @@ class Stage(nn.Module):
         return x
 
 
-class MaskHead(nn.Module):
+class StatsHead(nn.Module):
     """
-    Module prepended to Transformer backbone to predict class of each pixel.
+    Module prepended to Transformer backbone to predict stats of each token.
 
-    Input shape: (B, _H, _W, C)
+    Input shape: (B, H, W, C)
     Output shape: (B, H, W, 5)
     """
     def __init__(self, config):
-        super(MaskHead, self).__init__()
+        super(StatsHead, self).__init__()
 
         self.channels = config['channels']
 
-        self.conv1_1 = nn.Conv2d(self.channels, self.channels // 2, 3, padding=1)
-        self.conv1_2 = nn.Conv2d(self.channels // 2, self.channels * 2, 1, padding=0)
-        self.conv1_3 = nn.PixelShuffle(2)
-
-        self.conv2_1 = nn.Conv2d(self.channels // 2, self.channels // 4, 3, padding=1)
-        self.conv2_2 = nn.Conv2d(self.channels // 4, self.channels, 1, padding=0)
-        self.conv2_3 = nn.PixelShuffle(2)
-
-        self.conv3_1 = nn.Conv2d(self.channels // 4, self.channels // 4, 3, padding=1)
-        self.conv3_2 = nn.Conv2d(self.channels // 4, 5, 1, padding=0)
+        self.linear1 = nn.Linear(self.channels, self.channels)
+        self.linear2 = nn.Linear(self.channels, 5)
 
     def forward(self, x):
-        # (B, C, _H, _W)
-        x = rearrange(x, 'b h w c -> b c h w').contiguous()
-        # (B, C, 2 * _H, 2 * _W)
-        x = self.conv1_3(F.selu(self.conv1_2(F.selu(self.conv1_1(x)))))
-        # (B, C, 4 * _H, 4 * _W)
-        x = self.conv2_3(F.selu(self.conv2_2(F.selu(self.conv2_1(x)))))
-        # (B, 5, 4 * _H, 4 * _W)
-        x = self.conv3_2(F.selu(self.conv3_1(x)))
-        # (B, 4 * _H, 4 * _W, 5)
-        x = rearrange(x, 'b c h w -> b h w c').contiguous()
+        # (B, H, W, C)
+        x = F.selu(self.linear1(x))
         # (B, H, W, 5)
-        x = F.softmax(x, dim=-1)
+        x = self.linear2(x)
 
         # (B, H, W, 5)
         return x
 
 
-class ClassHead(nn.Module):
+class CLSHead(nn.Module):
     """
-    Module appended to Transformer backbone to predict the class of the image.
+    Module appended to Transformer backbone to predict the type of the image and some generator info.
 
     Input shape: (B, D)
-    Output shape: (B, 14)
+    Output shape: (B, 20), (B, 3)
     """
     def __init__(self, config):
-        super(ClassHead, self).__init__()
+        super(CLSHead, self).__init__()
 
         self.embd_d = config['embd_d']
         self.inner_dim = config['inner_dim']
 
-        self.linear1 = nn.Linear(self.embd_d, self.inner_dim)
-        self.linear2 = nn.Linear(self.inner_dim, 14)
+        self.linear = nn.Linear(self.embd_d, self.inner_dim)
+        self.linear_type = nn.Linear(self.inner_dim, 20)
+        self.linear_info = nn.Linear(self.inner_dim, 3)
 
     def forward(self, x):
         # (B, D)
-        x = F.selu(self.linear1(x))
-        # (B, 14)
-        x = F.softmax(self.linear2(x), dim=-1)
+        x = F.selu(self.linear(x))
+        # (B, 20)
+        _type = F.softmax(self.linear_type(x), dim=-1)
+        # (B, 3)
+        _info = self.linear_info(x)
 
-        # (B, 14)
-        return x
+        # (B, 20), (B, 3)
+        return (_type, _info)
 
 
 class Transformer(nn.Module):
@@ -342,7 +325,7 @@ class Transformer(nn.Module):
     Kind of Transmormer model.
 
     Input shape: (B, H, W, 3)
-    Output shape: (B, H, W, 5), (B, 14)
+    Output shape: (B, _H, _W, 5), (B, 20), (B, 3)
     """
     def __init__(self, config):
         super(Transformer, self).__init__()
@@ -352,8 +335,8 @@ class Transformer(nn.Module):
 
         self.init_projection = nn.Conv2d(3, self.proj_channels, 3, padding=1)
         self.stages = nn.ModuleList([Stage(config[f'stage_{i}']) for i in range(self.num_stages)])
-        self.mask_head = MaskHead(config['mask_head'])
-        self.class_head = ClassHead(config['class_head'])
+        self.stats_head = StatsHead(config['mask_head'])
+        self.cls_head = CLSHead(config['class_head'])
 
     def forward(self, x):
         # (B, 3, H, W)
@@ -376,10 +359,10 @@ class Transformer(nn.Module):
         # (B, _H, _W, D)
         image = rearrange(image, 'b (h w) c -> b h w c', h=HW, w=HW).contiguous()
 
-        # (B, H, W, 5)
-        res_mask = self.mask_head(image)
-        # (B, 14)
-        res_class = self.class_head(cls)
+        # (B, _H, _W, 5)
+        _stats = self.stats_head(image)
+        # (B, 20), (B, 3)
+        _type, _info = self.cls_head(cls)
 
-        # (B, H, W, 5), (B, 14)
-        return res_mask, res_class
+        # (B, _H, _W, 5), (B, 14)
+        return _stats, _type, _info
