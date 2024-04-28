@@ -45,6 +45,7 @@ class StagePreprocessor(nn.Module):
             self.proj = deepcopy(base_model.proj)
             if self.use_cls:
                 self.register_parameter('cls_token', deepcopy(base_model.cls_token))
+        self.norm = nn.LayerNorm(self.out_c)
 
     def get_pos_embd(self, n, d, freq):
         scale_coef = 0.3
@@ -64,7 +65,7 @@ class StagePreprocessor(nn.Module):
         return pos_embd
 
     def forward(self, search_target):
-        B = x.shape[0]
+        B = search_target.shape[0]
         SHW2, THW2 = self.search_hw * self.search_hw, self.target_hw * self.target_hw
 
         # search_target: (B, Hs * Ws + Ht * Wt, C)
@@ -97,6 +98,9 @@ class StagePreprocessor(nn.Module):
         else:
             # (B, _Hs * _Ws + _Ht * _Wt, _C)
             x = torch.cat([search, target], dim=1)
+
+        # (B, N, _C)
+        x = self.norm(x)
 
         # (B, N, _C)
         return x
@@ -354,7 +358,7 @@ class MaskHead(nn.Module):
     """
     Module prepended to MixFormer backbone to predict class of each pixel.
 
-    Input shape: (B, _Hs * _Ws, C)
+    Input shape: (B, _Hs, _Ws, C)
     Output shape: (B, Hs, Ws)
     """
     def __init__(self, config, base_model=None):
@@ -378,11 +382,8 @@ class MaskHead(nn.Module):
         )
 
     def forward(self, x):
-        B = x.shape[0]
-        HW = math.isqrt(x.shape[1])
-
         # (B, C, H, W)
-        x = rearrange(x, 'b (h w) c -> b c h w', h=HW, w=HW).contiguous()
+        x = rearrange(x, 'b h w c -> b c h w').contiguous()
         # (B, C/2, 2*H, 2*W)
         x = self.deconv1(x)
         # (B, C/4, 4*H, 4*W)
@@ -470,7 +471,7 @@ class MixFormer(nn.Module):
         self._set_requires_grad(self.init_projection, requires_grad)
         for stage in self.stages:
             self._set_requires_grad(stage.preprocessor.proj, requires_grad)
-            self._set_requires_grad(stage.preprocessor.norm, requires_grad)
+            #self._set_requires_grad(stage.preprocessor.norm, requires_grad) # include in next models
             for mam_block in stage.mam_blocks:
                 self._set_requires_grad(mam_block.depthwise_qkv.norm1, requires_grad)
                 self._set_requires_grad(mam_block.depthwise_qkv.depthwise_q, requires_grad)
