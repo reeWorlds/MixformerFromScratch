@@ -230,11 +230,9 @@ class AsymetricMultiHeadAttention(nn.Module):
         self.scale = 1.0 / (self.head_dim ** 0.5)
         self.ff_scale = config['ff_scale']
 
-        #self.drop1 = DropPath(0.2)
-        self.drop1 = Identity()
+        self.drop1 = DropPath(0.2)
         self.norm2 = nn.LayerNorm(self.embd_d)
-        #self.drop2 = DropPath(0.2)
-        self.drop2 = Identity()
+        self.drop2 = DropPath(0.2)
         self.ff_proj = nn.Sequential(
             nn.Linear(self.embd_d, self.embd_d * self.ff_scale),
             nn.GELU(),
@@ -342,9 +340,11 @@ class PositionHead(nn.Module):
         self.channels = config['channels']
 
         self.conv1 = nn.Conv2d(self.channels, self.channels, 3, 1, 1)
-        self.bn1 = nn.BatchNorm2d(self.channels)
+        #self.bn1 = nn.BatchNorm2d(self.channels)
+        self.bn1 = Identity()
         self.conv2 = nn.Conv2d(self.channels, self.channels, 1)
-        self.bn2 = nn.BatchNorm2d(self.channels)
+        #self.bn2 = nn.BatchNorm2d(self.channels)
+        self.bn2 = Identity()
         self.conv3 = nn.Conv2d(self.channels, 4, 1)
         self.linear1 = nn.Linear(16 * 16 * 4, 32)
         self.linear2 = nn.Linear(32, 2)
