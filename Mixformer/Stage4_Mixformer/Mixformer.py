@@ -1,11 +1,18 @@
 import math
-from copy import deepcopy
 import torch
 from torch import nn
 import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from timm.models.layers import DropPath
+
+
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+        return x
 
 
 class StagePreprocessor(nn.Module):
@@ -223,9 +230,11 @@ class AsymetricMultiHeadAttention(nn.Module):
         self.scale = 1.0 / (self.head_dim ** 0.5)
         self.ff_scale = config['ff_scale']
 
-        self.drop1 = DropPath(0.2)
+        #self.drop1 = DropPath(0.2)
+        self.drop1 = Identity()
         self.norm2 = nn.LayerNorm(self.embd_d)
-        self.drop2 = DropPath(0.2)
+        #self.drop2 = DropPath(0.2)
+        self.drop2 = Identity()
         self.ff_proj = nn.Sequential(
             nn.Linear(self.embd_d, self.embd_d * self.ff_scale),
             nn.GELU(),
