@@ -139,7 +139,7 @@ class DepthWiseQueryKeyValue(nn.Module):
     def conv_proj(self, channels, kernel_size, padding, stride):
         proj = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size, stride, padding, groups=channels),
-            nn.BatchNorm2d(channels),
+            #nn.BatchNorm2d(channels),
             Rearrange('b c h w -> b (h w) c')
         )
         return proj
@@ -340,11 +340,9 @@ class PositionHead(nn.Module):
         self.channels = config['channels']
 
         self.conv1 = nn.Conv2d(self.channels, self.channels, 3, 1, 1)
-        #self.bn1 = nn.BatchNorm2d(self.channels)
-        self.bn1 = Identity()
+        self.bn1 = nn.BatchNorm2d(self.channels)
         self.conv2 = nn.Conv2d(self.channels, self.channels, 1)
-        #self.bn2 = nn.BatchNorm2d(self.channels)
-        self.bn2 = Identity()
+        self.bn2 = nn.BatchNorm2d(self.channels)
         self.conv3 = nn.Conv2d(self.channels, 4, 1)
         self.linear1 = nn.Linear(16 * 16 * 4, 32)
         self.linear2 = nn.Linear(32, 2)
