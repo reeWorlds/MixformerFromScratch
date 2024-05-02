@@ -43,8 +43,7 @@ class StagePreprocessor(nn.Module):
         self.proj = nn.Conv2d(self.in_c, self.out_c, self.patch_size, self.patch_stride, self.patch_padding)
         if self.use_cls:
             self.register_parameter('cls_token', nn.Parameter(torch.randn(1, 1, self.out_c)))
-        #self.norm = nn.LayerNorm(self.out_c)
-        self.norm = Identity()
+        self.norm = nn.LayerNorm(self.out_c)
 
     def get_pos_embd(self, n, d, freq):
         scale_coef = 0.3
@@ -129,7 +128,8 @@ class DepthWiseQueryKeyValue(nn.Module):
         self.head_dim = self.embd_d // self.num_heads
         self.use_cls = config['use_cls']
 
-        self.norm1 = nn.LayerNorm(self.embd_d)
+        #self.norm1 = nn.LayerNorm(self.embd_d)
+        self.norm1 = Identity()
         self.depthwise_q = self.conv_proj(self.embd_d, self.kernel_size, self.padding_q, self.stride_q)
         self.depthwise_k = self.conv_proj(self.embd_d, self.kernel_size, self.padding_kv, self.stride_kv)
         self.depthwise_v = self.conv_proj(self.embd_d, self.kernel_size, self.padding_kv, self.stride_kv)
