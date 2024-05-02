@@ -128,8 +128,7 @@ class DepthWiseQueryKeyValue(nn.Module):
         self.head_dim = self.embd_d // self.num_heads
         self.use_cls = config['use_cls']
 
-        #self.norm1 = nn.LayerNorm(self.embd_d)
-        self.norm1 = Identity()
+        self.norm1 = nn.LayerNorm(self.embd_d)
         self.depthwise_q = self.conv_proj(self.embd_d, self.kernel_size, self.padding_q, self.stride_q)
         self.depthwise_k = self.conv_proj(self.embd_d, self.kernel_size, self.padding_kv, self.stride_kv)
         self.depthwise_v = self.conv_proj(self.embd_d, self.kernel_size, self.padding_kv, self.stride_kv)
@@ -232,7 +231,8 @@ class AsymetricMultiHeadAttention(nn.Module):
         self.ff_scale = config['ff_scale']
 
         self.drop1 = DropPath(0.2)
-        self.norm2 = nn.LayerNorm(self.embd_d)
+        #self.norm2 = nn.LayerNorm(self.embd_d)
+        self.norm2 = Identity()
         self.drop2 = DropPath(0.2)
         self.ff_proj = nn.Sequential(
             nn.Linear(self.embd_d, self.embd_d * self.ff_scale),
