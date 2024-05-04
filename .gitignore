@@ -405,3 +405,4 @@ FodyWeavers.xsd
 
 # Extra
 **/test.py
+LocalFiles/**
