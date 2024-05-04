@@ -7,14 +7,6 @@ from einops.layers.torch import Rearrange
 from timm.models.layers import DropPath
 
 
-class Identity(nn.Module):
-    def __init__(self):
-        super(Identity, self).__init__()
-
-    def forward(self, x):
-        return x
-
-
 class StagePreprocessor(nn.Module):
     """
     Preprocess search and target images to be used by attention mechanism.
@@ -139,8 +131,8 @@ class DepthWiseQueryKeyValue(nn.Module):
     def conv_proj(self, channels, kernel_size, padding, stride):
         proj = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size, stride, padding, groups=channels),
-            nn.BatchNorm2d(channels),
-            Rearrange('b c h w -> b (h w) c')
+            Rearrange('b c h w -> b (h w) c'),
+            nn.LayerNorm(channels)
         )
         return proj
 
@@ -231,8 +223,7 @@ class AsymetricMultiHeadAttention(nn.Module):
         self.ff_scale = config['ff_scale']
 
         self.drop1 = DropPath(0.2)
-        #self.norm2 = nn.LayerNorm(self.embd_d)
-        self.norm2 = Identity()
+        self.norm2 = nn.LayerNorm(self.embd_d)
         self.drop2 = DropPath(0.2)
         self.ff_proj = nn.Sequential(
             nn.Linear(self.embd_d, self.embd_d * self.ff_scale),
