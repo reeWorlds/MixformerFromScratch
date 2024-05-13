@@ -3,7 +3,37 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from einops import rearrange
-from . import Mixformer
+from .Mixformer import MixFormer
+
+
+def extract_MixFormer_features(mixformer: MixFormer, search, target):
+    with torch.no_grad():
+        search = rearrange(search, 'b h w c -> b c h w').contiguous()
+        search = F.selu(mixformer.init_projection(search))
+        search = rearrange(search, 'b c h w -> b (h w) c').contiguous()
+
+        target = rearrange(target, 'b h w c -> b c h w').contiguous()
+        target = F.selu(mixformer.init_projection(target))
+        target = rearrange(target, 'b c h w -> b (h w) c').contiguous()
+
+        x = torch.cat([search, target], dim=1)
+        for stage in mixformer.stages:
+            x = stage(x)
+
+        SHW2 = mixformer.search_out_hw * mixformer.search_out_hw
+        THW2 = mixformer.target_out_hw * mixformer.target_out_hw
+
+        cls, search, target = torch.split(x, [1, SHW2, THW2], dim=1)
+        # (B, D)
+        cls = cls.squeeze(1)
+        # (B, _Hs, _Ws, D)
+        search = rearrange(search, 'b (h w) c -> b h w c', h=mixformer.search_out_hw,
+                        w=mixformer.search_out_hw).contiguous()
+        # (B, _Ht, _Wt, D)
+        target = rearrange(target, 'b (h w) c -> b h w c', h=mixformer.target_out_hw,
+                        w=mixformer.target_out_hw).contiguous()
+        
+    return cls, search, target
 
 
 def make_uncertainty_config(size_type='medium'):
