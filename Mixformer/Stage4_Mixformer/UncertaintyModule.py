@@ -107,6 +107,7 @@ class UncertaintyModule(nn.Module):
 
         x, rest = torch.split(x, [1, Ns + Nt], dim=1)
         
+        x = x.squeeze(1)
         x = self.norm(x)
         x = F.relu(self.linear1(x))
         x = self.linear2(x)
