@@ -26,12 +26,6 @@ def extract_MixFormer_features(mixformer: MixFormer, search, target):
         cls, search, target = torch.split(x, [1, SHW2, THW2], dim=1)
         # (B, D)
         cls = cls.squeeze(1)
-        # (B, _Hs, _Ws, D)
-        search = rearrange(search, 'b (h w) c -> b h w c', h=mixformer.search_out_hw,
-                        w=mixformer.search_out_hw).contiguous()
-        # (B, _Ht, _Wt, D)
-        target = rearrange(target, 'b (h w) c -> b h w c', h=mixformer.target_out_hw,
-                        w=mixformer.target_out_hw).contiguous()
         
     return cls, search, target
 
@@ -96,6 +90,10 @@ class UncertaintyModule(nn.Module):
         self.ff1 = _MyFeedForward(self.embd_d)
         self.attn2 = _MyAttention(self.embd_d)
         self.ff2 = _MyFeedForward(self.embd_d)
+        self.attn3 = _MyAttention(self.embd_d)
+        self.ff3 = _MyFeedForward(self.embd_d)
+        self.attn4 = _MyAttention(self.embd_d)
+        self.ff4 = _MyFeedForward(self.embd_d)
         self.norm = nn.LayerNorm(self.embd_d)
         self.linear1 = nn.Linear(self.embd_d, self.embd_d)
         self.linear2 = nn.Linear(self.embd_d, 1)
@@ -108,6 +106,10 @@ class UncertaintyModule(nn.Module):
         x = x + self.ff1(x)
         x = x + self.attn2(x, target)
         x = x + self.ff2(x)
+        x = x + self.attn3(x, search)
+        x = x + self.ff3(x)
+        x = x + self.attn4(x, target)
+        x = x + self.ff4(x)
         x = self.norm(x)
         x = F.relu(self.linear1(x))
         x = self.linear2(x)
