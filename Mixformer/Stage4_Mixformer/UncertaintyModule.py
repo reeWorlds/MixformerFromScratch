@@ -58,7 +58,7 @@ class _MyAttention(nn.Module):
         k = self.k(sequence)
         v = self.v(sequence)
 
-        attn = torch.einsum('bid,bjd->bij', [q, k]) * self.scale
+        attn = torch.einsum('bid,bjd->bij', q, k) * self.scale
         attn = F.softmax(attn, dim=-1)
         out = torch.einsum('bij,bjd->bid', attn, v)
 
@@ -102,14 +102,14 @@ class UncertaintyModule(nn.Module):
         B, N, D = search.shape
 
         x = self.cls.expand(B, -1, -1)
-        x = x + self.attn1(x, search)
-        x = x + self.ff1(x)
-        x = x + self.attn2(x, target)
-        x = x + self.ff2(x)
-        x = x + self.attn3(x, search)
-        x = x + self.ff3(x)
-        x = x + self.attn4(x, target)
-        x = x + self.ff4(x)
+        x = self.attn1(x, search)
+        x = self.ff1(x)
+        x = self.attn2(x, target)
+        x = self.ff2(x)
+        x = self.attn3(x, search)
+        x = self.ff3(x)
+        x = self.attn4(x, target)
+        x = self.ff4(x)
         x = self.norm(x)
         x = F.relu(self.linear1(x))
         x = self.linear2(x)
