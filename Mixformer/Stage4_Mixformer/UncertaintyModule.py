@@ -1,4 +1,3 @@
-import math
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -39,77 +38,75 @@ def make_uncertainty_config(size_type='medium'):
         embd_d = 108
     else:
         raise ValueError(f'Invalid size type {size_type}')
-    config = {'embd_d': embd_d}
+    config = {'embd_d': embd_d, 'target_hw': 12, 'search_hw': 16, 'num_blocks': 4}
     return config
 
 
-class _MyAttention(nn.Module):
+class _MyAttentionBlock(nn.Module):
     def __init__(self, embd_d):
         super().__init__()
         self.embd_d = embd_d
         self.scale = embd_d ** -0.5
 
+        self.norm1 = nn.LayerNorm(embd_d)
         self.q = nn.Linear(embd_d, embd_d)
         self.k = nn.Linear(embd_d, embd_d)
         self.v = nn.Linear(embd_d, embd_d)
 
-    def forward(self, cls, sequence):
-        q = self.q(cls)
-        k = self.k(sequence)
-        v = self.v(sequence)
-
-        attn = torch.einsum('bid,bjd->bij', q, k) * self.scale
-        attn = F.softmax(attn, dim=-1)
-        out = torch.einsum('bij,bjd->bid', attn, v)
-
-        return out
-
-
-class _MyFeedForward(nn.Module):
-    def __init__(self, embd_d):
-        super().__init__()
-        self.embd_d = embd_d
-
-        self.net = nn.Sequential(
+        self.norm2 = nn.LayerNorm(embd_d)
+        self.ff = nn.Sequential(
             nn.Linear(embd_d, embd_d * 2),
             nn.GELU(),
             nn.Linear(embd_d * 2, embd_d)
         )
 
     def forward(self, x):
-        return self.net(x)
+        y = self.norm1(x)
+        q = self.q(y)
+        k = self.k(y)
+        v = self.v(y)
+        attn = torch.einsum('bid,bjd->bij', q, k) * self.scale
+        attn = F.softmax(attn, dim=-1)
+        attn = torch.einsum('bij,bjd->bid', attn, v)
+
+        x = x + attn
+        x = x + self.ff(self.norm2(x))
+
+        return x
 
 
 class UncertaintyModule(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.embd_d = config['embd_d']
+        self.target_hw = config['target_hw']
+        self.search_hw = config['search_hw']
+        self.num_blocks = config['num_blocks']
 
         self.register_parameter("cls", nn.Parameter(torch.randn(1, 1, self.embd_d)))
-        self.attn1 = _MyAttention(self.embd_d)
-        self.ff1 = _MyFeedForward(self.embd_d)
-        self.attn2 = _MyAttention(self.embd_d)
-        self.ff2 = _MyFeedForward(self.embd_d)
-        self.attn3 = _MyAttention(self.embd_d)
-        self.ff3 = _MyFeedForward(self.embd_d)
-        self.attn4 = _MyAttention(self.embd_d)
-        self.ff4 = _MyFeedForward(self.embd_d)
+        self.register_parameter("search", nn.Parameter(torch.randn(1, self.search_hw * self.search_hw, self.embd_d) * 0.5))
+        self.register_parameter("target", nn.Parameter(torch.randn(1, self.target_hw * self.target_hw, self.embd_d) * 0.5))
+
+        self.blocks = nn.ModuleList([_MyAttentionBlock(self.embd_d) for _ in range(self.num_blocks)])
         self.norm = nn.LayerNorm(self.embd_d)
         self.linear1 = nn.Linear(self.embd_d, self.embd_d)
         self.linear2 = nn.Linear(self.embd_d, 1)
 
     def forward(self, search, target):
-        B, N, D = search.shape
+        B, Ns, D = search.shape
+        B, Nt, D = target.shape
 
-        x = self.cls.expand(B, -1, -1)
-        x = self.attn1(x, search)
-        x = self.ff1(x)
-        x = self.attn2(x, target)
-        x = self.ff2(x)
-        x = self.attn3(x, search)
-        x = self.ff3(x)
-        x = self.attn4(x, target)
-        x = self.ff4(x)
+        cls_exp = self.cls.expand(B, -1, -1)
+        self_exp = search + self.search.expand(B, -1, -1)
+        target_exp = target + self.target.expand(B, -1, -1)
+
+        x = torch.cat([cls_exp, self_exp, target_exp], dim=1)
+
+        for block in self.blocks:
+            x = block(x)
+
+        x, rest = torch.split(x, [1, Ns + Nt], dim=1)
+        
         x = self.norm(x)
         x = F.relu(self.linear1(x))
         x = self.linear2(x)
